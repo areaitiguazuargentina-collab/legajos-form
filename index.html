@@ -15,17 +15,18 @@
 
     <section id="publicSection" class="content-section">
       <div class="section-title">
-        <span class="badge">Público</span>
         <h2>Registro de Ingreso</h2>
       </div>
 
       <form id="frmIngreso" class="form-group">
-        <label for="tokens">Legajos a registrar</label>
-        <div class="input-wrapper">
-          <input id="tokens" maxlength="300" required placeholder="Ej: 1162, 1163, C5..." autocomplete="off" />
+        <div class="field">
+          <label for="tokens">Legajos a registrar</label>
+          <div class="input-wrapper">
+            <input id="tokens" maxlength="300" required placeholder="Ej: 1162, 1163, C5..." autocomplete="off" />
+          </div>
         </div>
 
-        <div class="row">
+        <div class="row mt-20">
           <button id="btnIngreso" type="submit" class="btn-primary">Enviar Registro</button>
           <button id="btnLimpiar" type="button" class="btn-secondary">Limpiar</button>
         </div>
@@ -56,7 +57,7 @@
           <input id="adminPass" type="password" placeholder="••••••••" required />
         </div>
 
-        <div class="row">
+        <div class="row mt-20" style="grid-column: span 2;">
           <button id="btnAdminLogin" type="submit" class="btn-accent">Entrar al Panel</button>
           <button id="btnAdminLogout" type="button" class="btn-danger" style="display:none;">Cerrar Sesión</button>
         </div>
@@ -73,8 +74,8 @@
       <div class="admin-card">
         <h3>Descargar Reportes</h3>
         <label for="mes">Seleccionar Mes</label>
-        <div class="row wrap">
-          <input id="mes" type="month" class="input-inline" />
+        <div class="row wrap mt-10">
+          <input id="mes" type="month" class="input-inline" style="flex: 1;" />
           <button id="btnCargarMes" type="button" class="btn-secondary">Vista Previa</button>
           <button id="btnExportarMes" type="button" class="btn-success">Exportar Excel</button>
         </div>
@@ -110,12 +111,12 @@
           </div>
         </div>
 
-        <div class="row">
+        <div class="row mt-20">
           <button id="btnAgregarLegajo" type="button" class="btn-primary">Activar Legajo</button>
           <button id="btnCargarLegajos" type="button" class="btn-secondary">Refrescar Lista</button>
         </div>
 
-        <div class="search-bar">
+        <div class="search-bar mt-20">
           <div class="field">
             <label for="buscarLegajo">Filtrar lista</label>
             <input id="buscarLegajo" placeholder="Buscar por número o nombre..." maxlength="60" />
@@ -154,7 +155,7 @@
         <div id="importBox" style="display:none;" class="import-area">
           <label for="bulkLegajos">Pegar datos desde Excel</label>
           <textarea id="bulkLegajos" rows="8" placeholder="Pega aquí la columna de legajos..."></textarea>
-          <div class="row">
+          <div class="row mt-20">
             <button id="btnImportarLegajos" type="button" class="btn-accent">Procesar Importación</button>
             <button id="btnCancelarImport" type="button" class="btn-secondary">Cancelar</button>
           </div>
