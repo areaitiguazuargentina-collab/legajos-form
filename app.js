@@ -33,8 +33,8 @@ const MAX_TOKENS_PER_SUBMIT = 50;
 const MIN_C = 1;
 const MAX_C = 99;
 
-const PREVIEW_LIMIT = 100; // Cargamos hasta 100 para la vista previa
-const PREVIEW_PAGE_SIZE = 5; // Pero mostramos de a 5
+const PREVIEW_LIMIT = 100; 
+const PREVIEW_PAGE_SIZE = 5; 
 const EXPORT_PAGE_SIZE = 1000;
 const LEGAJOS_PAGE_SIZE = 5;
 
@@ -57,6 +57,7 @@ const btnAdminLogout = $("btnAdminLogout");
 const msgAdmin = $("msgAdmin");
 
 const adminPanelSection = $("adminPanelSection");
+const msgPanel = $("msgPanel"); // <--- CORRECCIÓN: Agregado
 const mesInput = $("mes");
 const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
@@ -347,18 +348,25 @@ function renderMonthPreview() {
 }
 
 btnCargarMes?.addEventListener("click", async () => {
-  setMsg(msgAdmin, "", "");
+  setMsg(msgPanel, "", ""); // <--- CORRECCIÓN: Usa msgPanel
   monthPreviewCache = [];
   monthPageIndex = 0;
   if (tblBody) tblBody.innerHTML = "";
 
   try {
     const yyyyMm = mesInput?.value;
-    if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
+    if (!yyyyMm) return setMsg(msgPanel, "Elegí un mes.", "err");
 
     btnCargarMes.disabled = true;
+    if (mesInfo) mesInfo.textContent = "Verificando datos...";
+
     const { start, end } = getMonthRange(yyyyMm);
     monthTotalRecords = await getMonthCount(start, end);
+
+    if (monthTotalRecords === 0) {
+      if (mesInfo) mesInfo.textContent = "";
+      return setMsg(msgPanel, "❌ No existen registros para el mes seleccionado.", "err");
+    }
 
     const qPrev = query(
       collection(db, "registros_tokens"),
@@ -380,10 +388,11 @@ btnCargarMes?.addEventListener("click", async () => {
 
     renderMonthPreview();
     if (mesInfo) mesInfo.textContent = `Total del mes: ${monthTotalRecords}.`;
-    setMsg(msgAdmin, "OK.", "ok");
+    setMsg(msgPanel, "Vista previa cargada.", "ok");
   } catch (err) {
     console.error(err);
-    setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
+    if (mesInfo) mesInfo.textContent = "";
+    setMsg(msgPanel, `Error cargando mes:\n${formatErr(err)}`, "err");
   } finally {
     btnCargarMes.disabled = false;
   }
@@ -442,46 +451,39 @@ async function exportMonthToExcel(yyyyMm) {
 }
 
 btnExportarMes?.addEventListener("click", async () => {
-  // 1. Limpiamos mensajes anteriores
-  setMsg(msgAdmin, "", "");
+  setMsg(msgPanel, "", ""); // <--- CORRECCIÓN: Usa msgPanel
   
   try {
     const yyyyMm = mesInput?.value;
-    if (!yyyyMm) return setMsg(msgAdmin, "Por favor, elegí un mes primero.", "err");
+    if (!yyyyMm) return setMsg(msgPanel, "Por favor, elegí un mes primero.", "err");
 
     btnExportarMes.disabled = true;
     if (mesInfo) mesInfo.textContent = "Verificando datos...";
 
-    // 2. Obtenemos el rango y contamos cuántos documentos hay
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
 
-    // --- EL CAMBIO CLAVE: Validación de existencia ---
     if (total === 0) {
-      if (mesInfo) mesInfo.textContent = ""; // Limpiamos el texto de carga
+      if (mesInfo) mesInfo.textContent = ""; 
       btnExportarMes.disabled = false;
-      return setMsg(msgAdmin, "❌ Error: No existen datos para exportar en el mes seleccionado.", "err");
+      return setMsg(msgPanel, "❌ Error: No existen datos para exportar en el mes seleccionado.", "err");
     }
-    // ------------------------------------------------
 
     if (mesInfo) mesInfo.textContent = "Preparando exportación...";
-    
-    // 3. Ejecutamos la exportación si hay datos
     const res = await exportMonthToExcel(yyyyMm);
 
     if (!res.filename || res.rows === 0) {
       if (mesInfo) mesInfo.textContent = "";
-      return setMsg(msgAdmin, "No se encontraron registros para procesar.", "err");
+      return setMsg(msgPanel, "No se encontraron registros para procesar.", "err");
     }
 
-    // 4. Éxito
     if (mesInfo) mesInfo.textContent = `✅ Exportado: ${res.filename} (${res.rows} filas)`;
-    setMsg(msgAdmin, "Exportación completada con éxito.", "ok");
+    setMsg(msgPanel, "Exportación completada con éxito.", "ok");
 
   } catch (err) {
     console.error(err);
     if (mesInfo) mesInfo.textContent = "";
-    setMsg(msgAdmin, `Error exportando:\n${formatErr(err)}`, "err");
+    setMsg(msgPanel, `Error exportando:\n${formatErr(err)}`, "err");
   } finally {
     btnExportarMes.disabled = false;
   }
