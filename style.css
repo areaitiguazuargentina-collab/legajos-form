@@ -1,0 +1,25 @@
+:root { font-family: system-ui, Arial, sans-serif; }
+body { margin: 0; padding: 24px; background: #0b1220; color: #e7eaf0; }
+.card { max-width: 820px; margin: 0 auto; background: #111a2e; border: 1px solid #1f2a44; border-radius: 14px; padding: 20px; }
+h1 { margin: 0 0 8px; font-size: 22px; }
+h2 { margin: 14px 0 8px; font-size: 18px; }
+label { display: block; margin: 12px 0 6px; font-weight: 600; }
+input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #2a385c; background: #0b1220; color: #e7eaf0; }
+input:focus { outline: 2px solid #355aa6; border-color: transparent; }
+.row { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+.row.wrap { flex-wrap: wrap; }
+button { padding: 10px 14px; border-radius: 10px; border: 1px solid #2a385c; background: #1a2a4f; color: #e7eaf0; cursor: pointer; }
+button.secondary { background: transparent; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+.muted { opacity: .8; line-height: 1.35; }
+.msg { margin-top: 10px; min-height: 20px; }
+.msg.ok { color: #7CFFB2; }
+.msg.err { color: #ff8a8a; }
+.preview { margin-top: 12px; }
+pre { white-space: pre-wrap; word-break: break-word; background: #0b1220; padding: 10px; border-radius: 10px; border: 1px solid #2a385c; }
+code { background: #0b1220; padding: 2px 6px; border-radius: 6px; border: 1px solid #2a385c; }
+.sep { border: none; border-top: 1px solid #1f2a44; margin: 18px 0; }
+.tableWrap { overflow: auto; border: 1px solid #1f2a44; border-radius: 12px; margin-top: 10px; }
+table { width: 100%; border-collapse: collapse; min-width: 760px; }
+th, td { padding: 10px; border-bottom: 1px solid #1f2a44; vertical-align: top; }
+th { text-align: left; position: sticky; top: 0; background: #0f1830; }
