@@ -1,19 +1,9 @@
-// app.js (COMPLETO corregido)
-// ✅ Cambios clave:
-// 1) createdAt usa Timestamp.now() (evita fallos con rules "is timestamp")
-// 2) El público NO lee legajos_activos (no rompe si rules bloquean lectura)
-//    -> La validación “legajo existe” la hace Firestore Rules con exists()
-//    -> Si falla, mostramos mensaje claro.
-// 3) Normaliza C/c a "C#" (ya lo hacías)
-// 4) Admin sigue pudiendo ABM + listar + exportar
-// 5) Si no hay datos en el mes, muestra "No hay datos" y no queda colgado
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getFirestore,
   addDoc,
   collection,
-  Timestamp, // ✅ IMPORTANTE
+  Timestamp,
   query,
   where,
   orderBy,
@@ -34,17 +24,17 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-
 const COOLDOWN_SECONDS = 5;
 let lastSubmitAt = 0;
 let cooldownTimer = null;
+
 const MAX_INPUT_LEN = 300;
 const MAX_TOKENS_PER_SUBMIT = 50;
 const MIN_C = 1;
 const MAX_C = 99;
 
-const PREVIEW_LIMIT = 50;        // vista previa al cargar mes
-const EXPORT_PAGE_SIZE = 1000;   // paginado para export
+const PREVIEW_LIMIT = 50;
+const EXPORT_PAGE_SIZE = 1000;
 const LEGAJOS_PAGE_SIZE = 5;
 
 const $ = (id) => document.getElementById(id);
@@ -138,7 +128,7 @@ function canonicalizeCToken(tok) {
   if (!m) return null;
   const n = Number(m[1]);
   if (!Number.isInteger(n) || n < MIN_C || n > MAX_C) return null;
-  return `C${n}`; // ✅ siempre mayúscula
+  return `C${n}`; // siempre mayúscula
 }
 
 function isValidLegajoCanon(canon) {
@@ -160,7 +150,6 @@ function parseTokens(raw) {
   const bad = [];
 
   for (const t of tokens) {
-    // C#
     const cTok = canonicalizeCToken(t);
     if (cTok) {
       if (!seen.has(cTok)) {
@@ -170,7 +159,6 @@ function parseTokens(raw) {
       continue;
     }
 
-    // Legajo numérico (solo dígitos)
     const onlyDigits = t.replace(/\D/g, "");
     if (!onlyDigits || onlyDigits.length > 4) {
       bad.push(t);
@@ -210,6 +198,31 @@ btnLimpiar?.addEventListener("click", () => {
   inputTokens.focus();
 });
 
+// ===== Cooldown UI =====
+function startCooldownCountdown() {
+  if (!btnIngreso) return;
+
+  let remaining = COOLDOWN_SECONDS;
+  btnIngreso.disabled = true;
+  btnIngreso.textContent = `Esperar ${remaining}s`;
+
+  if (cooldownTimer) clearInterval(cooldownTimer);
+
+  cooldownTimer = setInterval(() => {
+    remaining--;
+
+    if (remaining <= 0) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      btnIngreso.disabled = false;
+      btnIngreso.textContent = "Ingreso";
+      return;
+    }
+
+    btnIngreso.textContent = `Esperar ${remaining}s`;
+  }, 1000);
+}
+
 // ===== Guardar ingreso (1 doc por token) =====
 frmIngreso?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -221,11 +234,7 @@ frmIngreso?.addEventListener("submit", async (e) => {
   // 🚫 Cooldown activo
   if (diff < COOLDOWN_SECONDS) {
     const remaining = Math.ceil(COOLDOWN_SECONDS - diff);
-    return setMsg(
-      msgPublic,
-      `Esperá ${remaining}s antes de volver a enviar.`,
-      "err"
-    );
+    return setMsg(msgPublic, `Esperá ${remaining}s antes de volver a enviar.`, "err");
   }
 
   if (btnIngreso) btnIngreso.disabled = true;
@@ -236,23 +245,10 @@ frmIngreso?.addEventListener("submit", async (e) => {
     const raw = inputTokens?.value || "";
     const { ok, bad } = parseTokens(raw);
 
-    if (!ok.length) {
-      btnIngreso.disabled = false;
-      return setMsg(msgPublic, "No hay legajos válidos.", "err");
-    }
-
-    if (bad.length) {
-      btnIngreso.disabled = false;
-      return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
-    }
-
+    if (!ok.length) return setMsg(msgPublic, "No hay legajos válidos.", "err");
+    if (bad.length) return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
     if (ok.length > MAX_TOKENS_PER_SUBMIT) {
-      btnIngreso.disabled = false;
-      return setMsg(
-        msgPublic,
-        `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`,
-        "err"
-      );
+      return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
     }
 
     const uid = auth.currentUser?.uid || "anon";
@@ -273,10 +269,7 @@ frmIngreso?.addEventListener("submit", async (e) => {
 
     await Promise.all(writes);
 
-    // ✅ Se guarda el momento del último envío
     lastSubmitAt = Date.now();
-
-    // ⏳ Inicia contador visual opcional
     startCooldownCountdown();
 
     setMsg(msgPublic, `OK guardado (${ok.length}).`, "ok");
@@ -292,39 +285,17 @@ frmIngreso?.addEventListener("submit", async (e) => {
     if (err?.code === "permission-denied") {
       setMsg(
         msgPublic,
-        "No permitido: puede ser legajo inexistente/no activo o token inválido.",
+        "No permitido: legajo inexistente/no activo, token inválido o App Check/Rules bloqueando.",
         "err"
       );
     } else {
       setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
     }
   } finally {
-    if (btnIngreso) btnIngreso.disabled = false;
+    // 👇 IMPORTANTE: no “romper” el cooldown si está corriendo
+    if (btnIngreso && !cooldownTimer) btnIngreso.disabled = false;
   }
 });
-
-function startCooldownCountdown() {
-  if (!btnIngreso) return;
-
-  let remaining = COOLDOWN_SECONDS;
-  btnIngreso.disabled = true;
-  btnIngreso.textContent = `Esperar ${remaining}s`;
-
-  if (cooldownTimer) clearInterval(cooldownTimer);
-
-  cooldownTimer = setInterval(() => {
-    remaining--;
-
-    if (remaining <= 0) {
-      clearInterval(cooldownTimer);
-      btnIngreso.disabled = false;
-      btnIngreso.textContent = "Ingreso";
-      return;
-    }
-
-    btnIngreso.textContent = `Esperar ${remaining}s`;
-  }, 1000);
-}
 
 // ===== Admin Auth =====
 frmAdminLogin?.addEventListener("submit", async (e) => {
@@ -525,7 +496,6 @@ btnExportarMes?.addEventListener("click", async () => {
     if (btnExportarMes) btnExportarMes.disabled = true;
     if (mesInfo) mesInfo.textContent = "Preparando exportación...";
 
-    // ✅ chequeo rápido
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
 
@@ -618,7 +588,7 @@ function renderLegajos() {
 
         await updateDoc(doc(db, "legajos_activos", leg), {
           activo: nextActivo,
-          updatedAt: Timestamp.now(), // ✅ timestamp real
+          updatedAt: Timestamp.now(),
         });
 
         if (current) current.activo = nextActivo;
@@ -653,11 +623,7 @@ btnAgregarLegajo?.addEventListener("click", async () => {
 
     await setDoc(
       doc(db, "legajos_activos", canon),
-      {
-        activo: true,
-        nombre,
-        updatedAt: Timestamp.now(), // ✅ timestamp real
-      },
+      { activo: true, nombre, updatedAt: Timestamp.now() },
       { merge: true }
     );
 
@@ -710,7 +676,7 @@ btnNextLegajos?.addEventListener("click", () => {
   renderLegajos();
 });
 
-// ===== Importación masiva (10 clics, sin mensajes “faltan X”) =====
+// ===== Importación masiva =====
 let unlockClicks = 0;
 let importUnlocked = false;
 
@@ -788,10 +754,7 @@ btnImportarLegajos?.addEventListener("click", async () => {
         if (leg === "0") continue;
         batch.set(
           doc(db, "legajos_activos", leg),
-          {
-            activo: true,
-            updatedAt: Timestamp.now(), // ✅ timestamp real
-          },
+          { activo: true, updatedAt: Timestamp.now() },
           { merge: true }
         );
         imported++;
@@ -809,7 +772,6 @@ btnImportarLegajos?.addEventListener("click", async () => {
       "ok"
     );
 
-    // bloquea de nuevo
     importUnlocked = false;
     unlockClicks = 0;
     if (importBox) importBox.style.display = "none";
