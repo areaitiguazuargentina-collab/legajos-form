@@ -252,15 +252,57 @@ btnCargar.addEventListener("click", async () => {
 btnExportar.addEventListener("click", () => {
   if (!lastRows.length) return setMsg(msgAdmin, "Primero cargá datos.", "err");
 
-  // SheetJS (XLSX) ya está en index.html
-  const ws = XLSX.utils.json_to_sheet(lastRows);
+  // lastRows: [{fecha_hora, tokens, empresaC, raw, uid}]  (cache)
+  // Queremos exportar: FechaHora (sin segundos) + Token (1 por fila)
+
+  const filas = [];
+
+  for (const r of lastRows) {
+    // r.tokens viene como "1162 0 1 C2" (por como lo armamos)
+    const tokens = String(r.tokens || "")
+      .split(/\s+/g)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    // Formato dd/mm/aaaa hh:mm (sin segundos)
+    const fechaHora = String(r.fecha_hora || "");
+    // Si tu fecha_hora ya viene sin segundos, perfecto.
+    // Si viene con segundos, recortamos al minuto:
+    const fechaHoraMin = recortarASoloMinutos(fechaHora);
+
+    for (const t of tokens) {
+      filas.push({
+        "FechaHora": fechaHoraMin,
+        "Legajo": t
+      });
+    }
+  }
+
+  const ws = XLSX.utils.json_to_sheet(filas, { header: ["FechaHora", "Legajo"] });
+
+  // (Opcional) Ancho de columnas
+  ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Registros");
 
   const filename = `control_colectivos_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, filename, { compression: true });
-  setMsg(msgAdmin, `Exportado: ${filename}`, "ok");
+  setMsg(msgAdmin, `Exportado: ${filename} (${filas.length} filas)`, "ok");
 });
+
+function recortarASoloMinutos(fechaHoraStr) {
+  // Intenta recortar cosas como "01/02/2026 07:08:11" -> "01/02/2026 07:08"
+  // o "1/2/2026, 7:08:11" -> "1/2/2026, 7:08"
+  // Si no encuentra patrón, devuelve el original.
+  const s = String(fechaHoraStr || "").trim();
+
+  // patrón flexible: HH:MM:SS -> HH:MM
+  const m = s.match(/^(.*\b\d{1,2}:\d{2})(?::\d{2})\b(.*)$/);
+  if (m) return (m[1] + (m[2] || "")).trim();
+
+  return s;
+}
 
 /** util */
 function escapeHtml(s) {
