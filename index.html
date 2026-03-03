@@ -62,13 +62,11 @@
       <input id="mes" type="month" />
 
       <div class="row wrap">
-        <button id="btnCargarMes" type="button">Cargar mes</button>
+        <button id="btnCargarMes" type="button">Cargar mes (vista previa)</button>
         <button id="btnExportarMes" type="button" class="secondary">Exportar mes a Excel</button>
       </div>
 
-      <p class="muted">
-        Exporta: <b>FechaHora (dd/mm/aaaa hh:mm)</b> + <b>Legajo/Token</b> (1 por fila).
-      </p>
+      <div id="mesInfo" class="muted" style="margin-top:6px;"></div>
 
       <div class="tableWrap">
         <table id="tbl">
@@ -87,7 +85,7 @@
       <!-- ABM Legajos activos -->
       <h2>ABM Legajos activos</h2>
       <p class="muted">
-        Estos legajos son los permitidos. El público solo podrá guardar legajos que existan acá (salvo <code>0</code>).<br>
+        El público solo podrá guardar legajos que existan acá (salvo <code>0</code>).<br>
         C# siempre permitido (C1..C99).
       </p>
 
@@ -104,9 +102,25 @@
 
       <div class="row wrap">
         <button id="btnAgregarLegajo" type="button">Agregar / Activar</button>
-        <button id="btnCargarLegajos" type="button" class="secondary">Ver legajos activos</button>
+        <button id="btnCargarLegajos" type="button" class="secondary">Ver legajos</button>
       </div>
 
+      <div class="row wrap" style="margin-top:10px;">
+        <div style="flex:1; min-width:240px;">
+          <label for="buscarLegajo">Buscar</label>
+          <input id="buscarLegajo" placeholder="Ej: 1162 o Perez" maxlength="60" />
+        </div>
+
+        <div style="min-width:220px;">
+          <label>&nbsp;</label>
+          <div class="row" style="margin-top:0;">
+            <button id="btnPrevLegajos" type="button" class="secondary">Anterior</button>
+            <button id="btnNextLegajos" type="button" class="secondary">Siguiente</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="legajosPager" class="muted" style="margin-top:6px;"></div>
       <div id="msgLegajos" class="msg" aria-live="polite"></div>
 
       <div class="tableWrap">
@@ -126,15 +140,14 @@
       <hr class="sep" />
 
       <!-- Importación masiva (secreta) -->
-      <h2>Importación masiva (solo una vez)</h2>
+      <h2>Importación masiva</h2>
 
       <div class="row wrap">
         <button id="btnUnlockImport" type="button" class="secondary">Habilitar importación</button>
-        <span id="importHint" class="muted"></span>
       </div>
 
       <div id="importBox" style="display:none;">
-        <label for="bulkLegajos">Pegá legajos (copiar/pegar desde Excel está OK)</label>
+        <label for="bulkLegajos">Pegá legajos (copiar/pegar Excel OK)</label>
         <textarea id="bulkLegajos" rows="10" placeholder="0&#10;1&#10;38&#10;86"></textarea>
 
         <div class="row wrap">
@@ -149,10 +162,7 @@
   </main>
 
   <script src="./firebase-config.js"></script>
-
-  <!-- SheetJS (Excel export) -->
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
   <script type="module" src="./app.js"></script>
 </body>
 </html>
