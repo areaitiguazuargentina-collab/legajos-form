@@ -251,7 +251,7 @@ frmIngreso?.addEventListener("submit", async (e) => {
   } catch (err) {
     console.error(err);
     if (err?.code === "permission-denied") {
-      setMsg(msgPublic, "No permitido: token inválido o rules bloqueando.", "err");
+      setMsg(msgPublic, "No permitido: Legajo No existe.", "err");
     } else {
       setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
     }
