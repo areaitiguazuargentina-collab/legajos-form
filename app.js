@@ -34,6 +34,10 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
+
+const COOLDOWN_SECONDS = 5;
+let lastSubmitAt = 0;
+let cooldownTimer = null;
 const MAX_INPUT_LEN = 300;
 const MAX_TOKENS_PER_SUBMIT = 50;
 const MIN_C = 1;
@@ -210,6 +214,20 @@ btnLimpiar?.addEventListener("click", () => {
 frmIngreso?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
+
+  const now = Date.now();
+  const diff = (now - lastSubmitAt) / 1000;
+
+  // 🚫 Cooldown activo
+  if (diff < COOLDOWN_SECONDS) {
+    const remaining = Math.ceil(COOLDOWN_SECONDS - diff);
+    return setMsg(
+      msgPublic,
+      `Esperá ${remaining}s antes de volver a enviar.`,
+      "err"
+    );
+  }
+
   if (btnIngreso) btnIngreso.disabled = true;
 
   try {
@@ -218,14 +236,25 @@ frmIngreso?.addEventListener("submit", async (e) => {
     const raw = inputTokens?.value || "";
     const { ok, bad } = parseTokens(raw);
 
-    if (!ok.length) return setMsg(msgPublic, "No hay legajos válidos.", "err");
-    if (bad.length) return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
-    if (ok.length > MAX_TOKENS_PER_SUBMIT)
-      return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
+    if (!ok.length) {
+      btnIngreso.disabled = false;
+      return setMsg(msgPublic, "No hay legajos válidos.", "err");
+    }
 
-    // ✅ IMPORTANTE:
-    // NO validamos existencia desde el cliente (porque legajos_activos suele estar bloqueado al público).
-    // La existencia/activo lo valida Firestore Rules con exists()/get().
+    if (bad.length) {
+      btnIngreso.disabled = false;
+      return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
+    }
+
+    if (ok.length > MAX_TOKENS_PER_SUBMIT) {
+      btnIngreso.disabled = false;
+      return setMsg(
+        msgPublic,
+        `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`,
+        "err"
+      );
+    }
+
     const uid = auth.currentUser?.uid || "anon";
 
     const writes = ok.map((t) => {
@@ -233,7 +262,7 @@ frmIngreso?.addEventListener("submit", async (e) => {
       const cantidadC = isC ? Number(t.slice(1)) : 0;
 
       return addDoc(collection(db, "registros_tokens"), {
-        createdAt: Timestamp.now(), // ✅ (evita fallo con serverTimestamp en rules)
+        createdAt: Timestamp.now(),
         token: t,
         tipo: isC ? "C" : "LEGAJO",
         cantidadC,
@@ -244,7 +273,14 @@ frmIngreso?.addEventListener("submit", async (e) => {
 
     await Promise.all(writes);
 
+    // ✅ Se guarda el momento del último envío
+    lastSubmitAt = Date.now();
+
+    // ⏳ Inicia contador visual opcional
+    startCooldownCountdown();
+
     setMsg(msgPublic, `OK guardado (${ok.length}).`, "ok");
+
     if (inputTokens) {
       inputTokens.value = "";
       refreshPreview();
@@ -253,7 +289,6 @@ frmIngreso?.addEventListener("submit", async (e) => {
   } catch (err) {
     console.error(err);
 
-    // Mensaje más claro para el usuario público
     if (err?.code === "permission-denied") {
       setMsg(
         msgPublic,
@@ -267,6 +302,29 @@ frmIngreso?.addEventListener("submit", async (e) => {
     if (btnIngreso) btnIngreso.disabled = false;
   }
 });
+
+function startCooldownCountdown() {
+  if (!btnIngreso) return;
+
+  let remaining = COOLDOWN_SECONDS;
+  btnIngreso.disabled = true;
+  btnIngreso.textContent = `Esperar ${remaining}s`;
+
+  if (cooldownTimer) clearInterval(cooldownTimer);
+
+  cooldownTimer = setInterval(() => {
+    remaining--;
+
+    if (remaining <= 0) {
+      clearInterval(cooldownTimer);
+      btnIngreso.disabled = false;
+      btnIngreso.textContent = "Ingreso";
+      return;
+    }
+
+    btnIngreso.textContent = `Esperar ${remaining}s`;
+  }, 1000);
+}
 
 // ===== Admin Auth =====
 frmAdminLogin?.addEventListener("submit", async (e) => {
