@@ -451,6 +451,7 @@ btnExportarMes?.addEventListener("click", async () => {
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
     if (!total) {
+      console.log(mesInfo)
       if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
