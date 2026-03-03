@@ -12,7 +12,7 @@ import {
   doc,
   setDoc,
   updateDoc,
-  getDoc
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getAuth,
@@ -22,26 +22,11 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-/**
- * MODELO NUEVO:
- * - legajos_activos/{legajo} -> { activo: true/false, nombre, updatedAt }
- * - registros_tokens/{autoId} -> { createdAt, token, tipo, cantidadC, raw, uid }
- *
- * Validación:
- * - Legajo: 0..9999 (1..4 dígitos). Normaliza ceros a la izquierda: 0012 -> 12. "0000" -> "0"
- * - Empresa: C1..C99 (cualquiera en minúscula se normaliza a C#)
- * - Si es legajo y NO es "0": debe existir en legajos_activos y activo==true
- */
-
 const MAX_INPUT_LEN = 300;
 const MAX_TOKENS_PER_SUBMIT = 50;
-
 const MIN_C = 1;
 const MAX_C = 99;
 
-// ======================
-// Helpers UI
-// ======================
 const $ = (id) => document.getElementById(id);
 
 const frmIngreso = $("frmIngreso");
@@ -51,7 +36,6 @@ const btnLimpiar = $("btnLimpiar");
 const msgPublic = $("msgPublic");
 const preview = $("preview");
 
-// Admin login
 const frmAdminLogin = $("frmAdminLogin");
 const adminEmail = $("adminEmail");
 const adminPass = $("adminPass");
@@ -59,14 +43,12 @@ const btnAdminLogin = $("btnAdminLogin");
 const btnAdminLogout = $("btnAdminLogout");
 const msgAdmin = $("msgAdmin");
 
-// Admin panel
 const adminPanelSection = $("adminPanelSection");
 const mesInput = $("mes");
 const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
 const tblBody = $("tbl").querySelector("tbody");
 
-// ABM legajos
 const nuevoLegajo = $("nuevoLegajo");
 const nombreLegajo = $("nombreLegajo");
 const btnAgregarLegajo = $("btnAgregarLegajo");
@@ -74,7 +56,17 @@ const btnCargarLegajos = $("btnCargarLegajos");
 const msgLegajos = $("msgLegajos");
 const tblLegajosBody = $("tblLegajos").querySelector("tbody");
 
+// Import masivo
+const btnUnlockImport = $("btnUnlockImport");
+const importHint = $("importHint");
+const importBox = $("importBox");
+const bulkLegajos = $("bulkLegajos");
+const btnImportarLegajos = $("btnImportarLegajos");
+const btnCancelarImport = $("btnCancelarImport");
+const msgImport = $("msgImport");
+
 function setMsg(el, text, type) {
+  if (!el) return;
   el.textContent = text || "";
   el.className = "msg " + (type || "");
 }
@@ -88,9 +80,7 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-// ======================
 // Firebase init
-// ======================
 if (!window.FIREBASE_CONFIG) {
   setMsg(msgPublic, "Falta firebase-config.js (window.FIREBASE_CONFIG).", "err");
   btnIngreso.disabled = true;
@@ -101,14 +91,11 @@ const app = initializeApp(window.FIREBASE_CONFIG);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Mantener sesión anónima para la carga pública
 async function ensureAnon() {
   if (!auth.currentUser) await signInAnonymously(auth);
 }
 
-// ======================
-// Parse / Validación
-// ======================
+// ===== Parse / Validación =====
 const RE_CTOKEN = /^C([1-9]\d{0,1})$/i;
 
 function canonicalizeLegajoDigits(d) {
@@ -125,7 +112,6 @@ function canonicalizeCToken(tok) {
 }
 
 function isValidLegajoCanon(canon) {
-  // canon: "0" o "1".."9999" sin ceros a la izquierda
   if (canon === "0") return true;
   if (!/^[1-9]\d{0,3}$/.test(canon)) return false;
   const n = Number(canon);
@@ -133,9 +119,13 @@ function isValidLegajoCanon(canon) {
 }
 
 function parseTokens(raw) {
+  // Soporta copiar/pegar desde Excel:
+  // - saltos de línea
+  // - tabs
+  // - comas, punto y coma, espacios
   const tokens = String(raw || "")
     .slice(0, MAX_INPUT_LEN)
-    .split(/[,\s;]+/g)
+    .split(/[,\s;\t\r\n]+/g)
     .map(s => s.trim())
     .filter(Boolean);
 
@@ -151,7 +141,7 @@ function parseTokens(raw) {
       continue;
     }
 
-    // legajo: extraer solo dígitos
+    // legajo: solo dígitos
     const onlyDigits = t.replace(/\D/g, "");
     if (!onlyDigits || onlyDigits.length > 4) {
       bad.push(t);
@@ -176,21 +166,16 @@ function empresaCTotal(tokensOk) {
     .reduce((sum, x) => sum + Number(x.slice(1)), 0);
 }
 
-// ======================
-// Legajos activos cache (para validar "no existe")
-// ======================
-let legajosActivosSet = new Set();   // solo legajos activos (string canon)
+// ===== Legajos activos cache (validación "no existe") =====
+let legajosActivosSet = new Set();
 let legajosActivosLoadedAt = 0;
 
 async function loadLegajosActivos({ force = false } = {}) {
-  // cache 2 min por defecto
   const now = Date.now();
   if (!force && now - legajosActivosLoadedAt < 2 * 60 * 1000 && legajosActivosSet.size > 0) {
     return legajosActivosSet;
   }
 
-  // Traer activos
-  // Nota: Si tenés MUCHOS (miles), habrá que paginar, pero para ~400 va perfecto.
   const q = query(
     collection(db, "legajos_activos"),
     where("activo", "==", true),
@@ -200,7 +185,7 @@ async function loadLegajosActivos({ force = false } = {}) {
   const snap = await getDocs(q);
   const s = new Set();
   snap.forEach((d) => {
-    const id = d.id; // docId = legajo canon
+    const id = d.id;
     if (isValidLegajoCanon(id)) s.add(id);
   });
 
@@ -209,9 +194,7 @@ async function loadLegajosActivos({ force = false } = {}) {
   return legajosActivosSet;
 }
 
-// ======================
-// Preview público
-// ======================
+// ===== Preview =====
 function refreshPreview() {
   const { ok, bad } = parseTokens(inputTokens.value);
   const cTot = empresaCTotal(ok);
@@ -231,9 +214,7 @@ btnLimpiar.addEventListener("click", () => {
   inputTokens.focus();
 });
 
-// ======================
-// Guardar ingreso (público)
-// ======================
+// ===== Guardar ingreso =====
 frmIngreso.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
@@ -246,7 +227,7 @@ frmIngreso.addEventListener("submit", async (e) => {
     const { ok, bad } = parseTokens(raw);
 
     if (ok.length === 0) {
-      setMsg(msgPublic, "No hay tokens válidos. Ej: 0,22,1162,C5", "err");
+      setMsg(msgPublic, "No hay legajos válidos.", "err");
       return;
     }
     if (bad.length) {
@@ -269,7 +250,7 @@ frmIngreso.addEventListener("submit", async (e) => {
 
     const uid = auth.currentUser?.uid || null;
 
-    // Guardamos 1 doc por token (mejor para export y rules)
+    // Guardamos 1 doc por token
     const writes = ok.map((t) => {
       const isC = /^C\d+$/.test(t);
       const cantidadC = isC ? Number(t.slice(1)) : 0;
@@ -298,9 +279,7 @@ frmIngreso.addEventListener("submit", async (e) => {
   }
 });
 
-// ======================
-// Admin Auth
-// ======================
+// ===== Admin Auth =====
 frmAdminLogin.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgAdmin, "", "");
@@ -321,22 +300,17 @@ btnAdminLogout.addEventListener("click", async () => {
   await signOut(auth);
 });
 
-// mostrar/ocultar panel
 onAuthStateChanged(auth, async (user) => {
   const isPasswordUser = !!user?.providerData?.some(p => p.providerId === "password");
-
   adminPanelSection.style.display = isPasswordUser ? "block" : "none";
   btnAdminLogout.style.display = user ? "inline-block" : "none";
 
   if (!user) {
-    // volver a anónimo para que público funcione
     try { await ensureAnon(); } catch {}
   }
 });
 
-// ======================
-// Export por mes (admin)
-// ======================
+// ===== Export por mes =====
 setMesActual();
 
 function setMesActual() {
@@ -353,7 +327,6 @@ function getMonthRange(yyyyMm) {
 }
 
 function formatFechaHoraMin(dateObj) {
-  // dd/mm/aaaa hh:mm (sin segundos) para AR
   return dateObj.toLocaleString("es-AR", {
     year: "numeric",
     month: "2-digit",
@@ -363,12 +336,11 @@ function formatFechaHoraMin(dateObj) {
   });
 }
 
-let lastMonthRows = []; // cache para export
+let lastMonthRows = [];
 
 async function cargarRegistrosDelMes(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
 
-  // Puede pedir índice la primera vez; Firestore te da un link.
   const q = query(
     collection(db, "registros_tokens"),
     where("createdAt", ">=", start),
@@ -448,9 +420,7 @@ btnExportarMes.addEventListener("click", async () => {
   }
 });
 
-// ======================
-// ABM Legajos (admin)
-// ======================
+// ===== ABM Legajos =====
 function canonLegajoFromInput(v) {
   const onlyDigits = String(v || "").replace(/\D/g, "");
   if (!onlyDigits || onlyDigits.length > 4) return null;
@@ -465,9 +435,6 @@ btnAgregarLegajo.addEventListener("click", async () => {
   try {
     const canon = canonLegajoFromInput(nuevoLegajo.value);
     if (!canon) return setMsg(msgLegajos, "Legajo inválido (0..9999).", "err");
-
-    // opcional: no permitir 0 en ABM (porque 0 lo dejamos siempre permitido)
-    // si querés permitirlo igual, borrá este if.
     if (canon === "0") return setMsg(msgLegajos, "El legajo 0 no se administra (siempre permitido).", "err");
 
     const nombre = String(nombreLegajo.value || "").trim().slice(0, 60);
@@ -478,7 +445,6 @@ btnAgregarLegajo.addEventListener("click", async () => {
       updatedAt: serverTimestamp()
     }, { merge: true });
 
-    // refrescar cache para validación pública
     await loadLegajosActivos({ force: true });
 
     setMsg(msgLegajos, `OK. Legajo ${canon} activado.`, "ok");
@@ -495,7 +461,6 @@ btnCargarLegajos.addEventListener("click", async () => {
   tblLegajosBody.innerHTML = "";
 
   try {
-    // Traemos hasta 5000 docs (si tenés más, se pagina)
     const q = query(collection(db, "legajos_activos"), orderBy("activo", "desc"), limit(5000));
     const snap = await getDocs(q);
 
@@ -517,7 +482,6 @@ btnCargarLegajos.addEventListener("click", async () => {
       tblLegajosBody.appendChild(tr);
     });
 
-    // bind desactivar
     tblLegajosBody.querySelectorAll(".btnDesactivar").forEach(btn => {
       btn.addEventListener("click", async () => {
         const leg = btn.getAttribute("data-leg");
@@ -531,7 +495,7 @@ btnCargarLegajos.addEventListener("click", async () => {
 
           await loadLegajosActivos({ force: true });
           setMsg(msgLegajos, `OK. Legajo ${leg} desactivado.`, "ok");
-          btnCargarLegajos.click(); // recargar tabla
+          btnCargarLegajos.click();
         } catch (err) {
           console.error(err);
           setMsg(msgLegajos, "No pude desactivar (revisá Rules admin).", "err");
@@ -546,13 +510,131 @@ btnCargarLegajos.addEventListener("click", async () => {
   }
 });
 
-// ======================
-// Init
-// ======================
+// ===== Importación masiva (10 clicks) =====
+let unlockClicks = 0;
+let importUnlocked = false;
+
+btnUnlockImport?.addEventListener("click", () => {
+  unlockClicks++;
+  const remaining = Math.max(0, 10 - unlockClicks);
+
+  if (remaining > 0) {
+    importHint.textContent = `Faltan ${remaining} clics...`;
+    return;
+  }
+
+  importUnlocked = true;
+  importBox.style.display = "block";
+  importHint.textContent = "Importación habilitada.";
+  setMsg(msgImport, "", "");
+});
+
+btnCancelarImport?.addEventListener("click", () => {
+  importUnlocked = false;
+  unlockClicks = 0;
+  importBox.style.display = "none";
+  importHint.textContent = "";
+  bulkLegajos.value = "";
+  setMsg(msgImport, "", "");
+});
+
+function parseLegajosFromBulk(text) {
+  // Acepta copiar/pegar desde Excel:
+  // - saltos de línea
+  // - tabs
+  // - múltiples columnas si pegás mal: igual extrae números
+  const parts = String(text || "")
+    .split(/[,\s;\t\r\n]+/g)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const seen = new Set();
+  const ok = [];
+  const invalid = [];
+
+  for (const p of parts) {
+    const digits = p.replace(/\D/g, "");
+    if (!digits || digits.length > 4) { invalid.push(p); continue; }
+    const canon = canonicalizeLegajoDigits(digits);
+    if (!isValidLegajoCanon(canon)) { invalid.push(p); continue; }
+    if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
+  }
+
+  return { ok, invalid };
+}
+
+function requireAdminOrThrow() {
+  const u = auth.currentUser;
+  const isPasswordUser = !!u?.providerData?.some(p => p.providerId === "password");
+  if (!u || !isPasswordUser) throw new Error("Solo admin logueado puede importar.");
+}
+
+btnImportarLegajos?.addEventListener("click", async () => {
+  setMsg(msgImport, "", "");
+
+  try {
+    requireAdminOrThrow();
+    if (!importUnlocked) return setMsg(msgImport, "Importación bloqueada.", "err");
+
+    const { ok, invalid } = parseLegajosFromBulk(bulkLegajos.value);
+
+    if (!ok.length) return setMsg(msgImport, "No encontré legajos válidos para importar.", "err");
+
+    if (!confirm(`Se importarán/activarán ${ok.length} legajos. ¿Continuar?`)) return;
+
+    btnImportarLegajos.disabled = true;
+
+    let imported = 0;
+    let batches = 0;
+
+    for (let i = 0; i < ok.length; i += 450) {
+      const slice = ok.slice(i, i + 450);
+      const batch = writeBatch(db);
+
+      for (const leg of slice) {
+        // si querés NO administrar 0, lo saltás
+        if (leg === "0") continue;
+
+        batch.set(doc(db, "legajos_activos", leg), {
+          activo: true,
+          nombre: "",
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        imported++;
+      }
+
+      await batch.commit();
+      batches++;
+    }
+
+    await loadLegajosActivos({ force: true });
+
+    setMsg(
+      msgImport,
+      `OK. Importados/activados: ${imported}. Batches: ${batches}.` +
+      (invalid.length ? ` (Inválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""})` : ""),
+      "ok"
+    );
+
+    // bloquear de nuevo (solo una vez)
+    importUnlocked = false;
+    unlockClicks = 0;
+    importBox.style.display = "none";
+    importHint.textContent = "Importación realizada y bloqueada nuevamente.";
+    bulkLegajos.value = "";
+  } catch (err) {
+    console.error(err);
+    setMsg(msgImport, String(err?.message || err), "err");
+  } finally {
+    btnImportarLegajos.disabled = false;
+  }
+});
+
+// ===== Init =====
 (async function init() {
   try {
     await ensureAnon();
-    // Pre-cargar legajos activos para validar rápido (si no hay ninguno, igual deja cargar C# y 0)
     await loadLegajosActivos({ force: true });
   } catch {}
   refreshPreview();
