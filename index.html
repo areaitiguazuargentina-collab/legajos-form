@@ -3,30 +3,37 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Control Colectivos</title>
+  <title>Control Colectivos | Panel de Gestión</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <main class="card">
-    <h1>Control de uso de colectivos</h1>
+    <header class="main-header">
+      <h1>🚌 Control de Colectivos</h1>
+      <p class="muted">Sistema de registro y gestión de legajos</p>
+    </header>
 
-    <!-- ====== VISTA PUBLICA (carga) ====== -->
-    <section id="publicSection">
-      <p class="muted">Ingresá legajos</p>
+    <section id="publicSection" class="content-section">
+      <div class="section-title">
+        <span class="badge">Público</span>
+        <h2>Registro de Ingreso</h2>
+      </div>
 
-      <form id="frmIngreso">
-        <label for="tokens">Legajo</label>
-        <input id="tokens" maxlength="300" required placeholder="Ingrese legajos Aquí" autocomplete="off" />
+      <form id="frmIngreso" class="form-group">
+        <label for="tokens">Legajos a registrar</label>
+        <div class="input-wrapper">
+          <input id="tokens" maxlength="300" required placeholder="Ej: 1162, 1163, C5..." autocomplete="off" />
+        </div>
 
         <div class="row">
-          <button id="btnIngreso" type="submit">Enviar</button>
-          <button id="btnLimpiar" type="button" class="secondary">Limpiar</button>
+          <button id="btnIngreso" type="submit" class="btn-primary">Enviar Registro</button>
+          <button id="btnLimpiar" type="button" class="btn-secondary">Limpiar</button>
         </div>
 
         <div id="msgPublic" class="msg" aria-live="polite"></div>
 
-        <details class="preview">
-          <summary>Vista previa (normalizado)</summary>
+        <details class="preview-box">
+          <summary>🔍 Ver vista previa normalizada</summary>
           <pre id="preview"></pre>
         </details>
       </form>
@@ -34,130 +41,126 @@
 
     <hr class="sep" />
 
-    <!-- ====== LOGIN ADMIN ====== -->
-    <section id="adminLoginSection">
-      <h2>Admin</h2>
-      <form id="frmAdminLogin">
-        <label for="adminEmail">Usuario (email)</label>
-        <input id="adminEmail" type="email" placeholder="control@tuempresa.local" required />
+    <section id="adminLoginSection" class="content-section">
+      <div class="section-title">
+        <h2>🔐 Acceso Administración</h2>
+      </div>
+      <form id="frmAdminLogin" class="form-grid">
+        <div class="field">
+          <label for="adminEmail">Usuario</label>
+          <input id="adminEmail" type="email" placeholder="email@empresa.com" required />
+        </div>
 
-        <label for="adminPass">Clave</label>
-        <input id="adminPass" type="password" placeholder="********" required />
+        <div class="field">
+          <label for="adminPass">Contraseña</label>
+          <input id="adminPass" type="password" placeholder="••••••••" required />
+        </div>
 
         <div class="row">
-          <button id="btnAdminLogin" type="submit">Entrar</button>
-          <button id="btnAdminLogout" type="button" class="secondary" style="display:none;">Salir</button>
+          <button id="btnAdminLogin" type="submit" class="btn-accent">Entrar al Panel</button>
+          <button id="btnAdminLogout" type="button" class="btn-danger" style="display:none;">Cerrar Sesión</button>
         </div>
 
         <div id="msgAdmin" class="msg" aria-live="polite"></div>
       </form>
     </section>
 
-    <!-- ====== PANEL ADMIN ====== -->
-    <section id="adminPanelSection" style="display:none;">
-      <h2>Panel Admin</h2>
-
-      <!-- Export por mes -->
-      <label for="mes">Mes a exportar</label>
-      <input id="mes" type="month" />
-
-      <div class="row wrap">
-        <button id="btnCargarMes" type="button">Cargar mes (vista previa)</button>
-        <button id="btnExportarMes" type="button" class="secondary">Exportar mes a Excel</button>
+    <section id="adminPanelSection" class="content-section admin-panel" style="display:none;">
+      <div class="section-header-admin">
+        <h2>📊 Panel de Control</h2>
       </div>
 
-      <div id="mesInfo" class="muted" style="margin-top:6px;"></div>
+      <div class="admin-card">
+        <h3>Descargar Reportes</h3>
+        <label for="mes">Seleccionar Mes</label>
+        <div class="row wrap">
+          <input id="mes" type="month" class="input-inline" />
+          <button id="btnCargarMes" type="button" class="btn-secondary">Vista Previa</button>
+          <button id="btnExportarMes" type="button" class="btn-success">Exportar Excel</button>
+        </div>
+        <div id="mesInfo" class="status-text"></div>
 
-      <div class="tableWrap">
-        <table id="tbl">
-          <thead>
-            <tr>
-              <th>Fecha/Hora</th>
-              <th>Legajo/Token</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="table-container">
+          <table id="tbl">
+            <thead>
+              <tr>
+                <th>Fecha/Hora</th>
+                <th>Legajo/Token</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
 
       <hr class="sep" />
 
-      <!-- ABM Legajos activos -->
-      <h2>ABM Legajos activos</h2>
-      <p class="muted">
-        El público solo podrá guardar legajos que existan acá (salvo <code>0</code>).<br>
-        C# siempre permitido (C1..C99).
-      </p>
+      <div class="admin-card">
+        <h3>Gestionar Legajos Activos</h3>
+        <p class="muted small">Solo los legajos aquí listados (o tipo C#) podrán registrarse.</p>
 
-      <div class="row wrap">
-        <div style="flex:1; min-width:240px;">
-          <label for="nuevoLegajo">Nuevo legajo (0..9999)</label>
-          <input id="nuevoLegajo" placeholder="1162" maxlength="4" />
-        </div>
-        <div style="flex:1; min-width:240px;">
-          <label for="nombreLegajo">Nombre (opcional)</label>
-          <input id="nombreLegajo" placeholder="Apellido Nombre" maxlength="60" />
-        </div>
-      </div>
-
-      <div class="row wrap">
-        <button id="btnAgregarLegajo" type="button">Agregar / Activar</button>
-        <button id="btnCargarLegajos" type="button" class="secondary">Ver legajos</button>
-      </div>
-
-      <div class="row wrap" style="margin-top:10px;">
-        <div style="flex:1; min-width:240px;">
-          <label for="buscarLegajo">Buscar</label>
-          <input id="buscarLegajo" placeholder="Ej: 1162 o Perez" maxlength="60" />
-        </div>
-
-        <div style="min-width:220px;">
-          <label>&nbsp;</label>
-          <div class="row" style="margin-top:0;">
-            <button id="btnPrevLegajos" type="button" class="secondary">Anterior</button>
-            <button id="btnNextLegajos" type="button" class="secondary">Siguiente</button>
+        <div class="form-row">
+          <div class="field">
+            <label for="nuevoLegajo">Nro. Legajo</label>
+            <input id="nuevoLegajo" placeholder="0000" maxlength="4" />
+          </div>
+          <div class="field">
+            <label for="nombreLegajo">Nombre Completo</label>
+            <input id="nombreLegajo" placeholder="Nombre del Chofer" maxlength="60" />
           </div>
         </div>
-      </div>
 
-      <div id="legajosPager" class="muted" style="margin-top:6px;"></div>
-      <div id="msgLegajos" class="msg" aria-live="polite"></div>
+        <div class="row">
+          <button id="btnAgregarLegajo" type="button" class="btn-primary">Activar Legajo</button>
+          <button id="btnCargarLegajos" type="button" class="btn-secondary">Refrescar Lista</button>
+        </div>
 
-      <div class="tableWrap">
-        <table id="tblLegajos">
-          <thead>
-            <tr>
-              <th>Legajo</th>
-              <th>Nombre</th>
-              <th>Activo</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div class="search-bar">
+          <div class="field">
+            <label for="buscarLegajo">Filtrar lista</label>
+            <input id="buscarLegajo" placeholder="Buscar por número o nombre..." maxlength="60" />
+          </div>
+        </div>
+
+        <div id="msgLegajos" class="msg" aria-live="polite"></div>
+
+        <div class="table-container">
+          <table id="tblLegajos">
+            <thead>
+              <tr>
+                <th>Legajo</th>
+                <th>Nombre</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <button id="btnPrevLegajos" type="button" class="btn-nav">← Anterior</button>
+          <span id="legajosPager" class="pager-info"></span>
+          <button id="btnNextLegajos" type="button" class="btn-nav">Siguiente →</button>
+        </div>
       </div>
 
       <hr class="sep" />
 
-      <!-- Importación masiva (secreta) -->
-      <h2>Importación masiva</h2>
+      <div class="admin-card">
+        <h3>Opciones Avanzadas</h3>
+        <button id="btnUnlockImport" type="button" class="btn-ghost">Habilitar importación masiva</button>
 
-      <div class="row wrap">
-        <button id="btnUnlockImport" type="button" class="secondary">Habilitar importación</button>
-      </div>
-
-      <div id="importBox" style="display:none;">
-        <label for="bulkLegajos">Pegá legajos (copiar/pegar Excel OK)</label>
-        <textarea id="bulkLegajos" rows="10" placeholder="0&#10;1&#10;38&#10;86"></textarea>
-
-        <div class="row wrap">
-          <button id="btnImportarLegajos" type="button">Importar legajos</button>
-          <button id="btnCancelarImport" type="button" class="secondary">Cancelar</button>
+        <div id="importBox" style="display:none;" class="import-area">
+          <label for="bulkLegajos">Pegar datos desde Excel</label>
+          <textarea id="bulkLegajos" rows="8" placeholder="Pega aquí la columna de legajos..."></textarea>
+          <div class="row">
+            <button id="btnImportarLegajos" type="button" class="btn-accent">Procesar Importación</button>
+            <button id="btnCancelarImport" type="button" class="btn-secondary">Cancelar</button>
+          </div>
+          <div id="msgImport" class="msg" aria-live="polite"></div>
         </div>
-
-        <div id="msgImport" class="msg" aria-live="polite"></div>
       </div>
-
     </section>
   </main>
 
