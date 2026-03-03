@@ -445,17 +445,31 @@ btnExportarMes.addEventListener("click", async () => {
     btnExportarMes.disabled = true;
     mesInfo.textContent = "Preparando exportación...";
 
+    // ✅ Chequeo rápido: si el mes no tiene registros, no exporta y no queda “colgado”
+    const { start, end } = getMonthRange(yyyyMm);
+    const total = await getMonthCount(start, end);
+
+    if (!total || total === 0) {
+      mesInfo.textContent = "";
+      return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+    }
+
+    // Si hay datos, exporta
+    mesInfo.textContent = `Exportando... (total estimado: ${total})`;
+
     const res = await exportMonthToExcel(yyyyMm);
-    if (!res.filename) return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+
+    if (!res.filename || res.rows === 0) {
+      mesInfo.textContent = "";
+      return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+    }
 
     mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
     setMsg(msgAdmin, "OK.", "ok");
   } catch (err) {
     console.error(err);
-
-    // Si es “failed-precondition” muchas veces incluye URL para crear índice
-    const msg = formatErr(err);
-    setMsg(msgAdmin, `Error exportando:\n${msg}`, "err");
+    mesInfo.textContent = "";
+    setMsg(msgAdmin, `Error exportando:\n${formatErr(err)}`, "err");
   } finally {
     btnExportarMes.disabled = false;
   }
