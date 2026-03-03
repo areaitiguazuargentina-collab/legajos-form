@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control Colectivos</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Control de uso de colectivos</h1>
+
+    <!-- ====== VISTA PUBLICA (carga) ====== -->
+    <section id="publicSection">
+      <p class="muted">
+        Ingresá legajos y/o empresa C.<br>
+        Legajos: <code>0..9999</code> (hasta 4 dígitos, acepta <code>0</code>).<br>
+        Empresa: <code>C1..C99</code> (cantidad personas). Ej: <code>C5</code>.<br>
+        Separá por coma, punto y coma o espacios. Ej: <code>0,22,1162,C5</code>
+      </p>
+
+      <form id="frmIngreso">
+        <label for="tokens">Legajos / Empresa</label>
+        <input id="tokens" maxlength="300" required placeholder="0,22,1162,C5" autocomplete="off" />
+
+        <div class="row">
+          <button id="btnIngreso" type="submit">Ingreso</button>
+          <button id="btnLimpiar" type="button" class="secondary">Limpiar</button>
+        </div>
+
+        <div id="msgPublic" class="msg" aria-live="polite"></div>
+
+        <details class="preview">
+          <summary>Vista previa (normalizado)</summary>
+          <pre id="preview"></pre>
+        </details>
+      </form>
+    </section>
+
+    <hr class="sep" />
+
+    <!-- ====== LOGIN ADMIN ====== -->
+    <section id="adminLoginSection">
+      <h2>Admin</h2>
+      <form id="frmAdminLogin">
+        <label for="adminEmail">Usuario (email)</label>
+        <input id="adminEmail" type="email" placeholder="control@tuempresa.local" required />
+
+        <label for="adminPass">Clave</label>
+        <input id="adminPass" type="password" placeholder="********" required />
+
+        <div class="row">
+          <button id="btnAdminLogin" type="submit">Entrar</button>
+          <button id="btnAdminLogout" type="button" class="secondary" style="display:none;">Salir</button>
+        </div>
+
+        <div id="msgAdmin" class="msg" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <!-- ====== PANEL ADMIN ====== -->
+    <section id="adminPanelSection" style="display:none;">
+      <h2>Panel Admin</h2>
+
+      <div class="row wrap">
+        <button id="btnCargar">Cargar últimos 500</button>
+        <button id="btnExportar" class="secondary">Exportar a Excel</button>
+      </div>
+
+      <p class="muted">
+        Exporta columnas: fecha/hora, token (legajo o C#), empresaC (total), raw, uid.
+      </p>
+
+      <div class="tableWrap">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th>Fecha/Hora</th>
+              <th>Tokens</th>
+              <th>Total C</th>
+              <th>Raw</th>
+              <th>UID</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="muted">
+      <small>Firestore guarda los ingresos. Lectura permitida solo al admin vía Rules.</small>
+    </footer>
+  </main>
+
+  <script src="./firebase-config.js"></script>
+
+  <!-- SheetJS (Excel export) -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
