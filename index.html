@@ -26,7 +26,7 @@
           </div>
         </div>
 
-        <div class="row mt-20">
+        <div class="row mt-20 btn-container">
           <button id="btnIngreso" type="submit" class="btn-primary">Enviar Registro</button>
           <button id="btnLimpiar" type="button" class="btn-secondary">Limpiar</button>
         </div>
@@ -57,7 +57,7 @@
           <input id="adminPass" type="password" placeholder="••••••••" required />
         </div>
 
-        <div class="row mt-20" style="grid-column: span 2;">
+        <div class="row mt-20 btn-container" style="grid-column: span 2;">
           <button id="btnAdminLogin" type="submit" class="btn-accent">Entrar al Panel</button>
           <button id="btnAdminLogout" type="button" class="btn-danger" style="display:none;">Cerrar Sesión</button>
         </div>
@@ -111,7 +111,7 @@
           </div>
         </div>
 
-        <div class="row mt-20">
+        <div class="row mt-20 btn-container">
           <button id="btnAgregarLegajo" type="button" class="btn-primary">Activar Legajo</button>
           <button id="btnCargarLegajos" type="button" class="btn-secondary">Refrescar Lista</button>
         </div>
@@ -143,23 +143,6 @@
           <button id="btnPrevLegajos" type="button" class="btn-nav">← Anterior</button>
           <span id="legajosPager" class="pager-info"></span>
           <button id="btnNextLegajos" type="button" class="btn-nav">Siguiente →</button>
-        </div>
-      </div>
-
-      <hr class="sep" />
-
-      <div class="admin-card">
-        <h3>Opciones Avanzadas</h3>
-        <button id="btnUnlockImport" type="button" class="btn-ghost">Habilitar importación masiva</button>
-
-        <div id="importBox" style="display:none;" class="import-area">
-          <label for="bulkLegajos">Pegar datos desde Excel</label>
-          <textarea id="bulkLegajos" rows="8" placeholder="Pega aquí la columna de legajos..."></textarea>
-          <div class="row mt-20">
-            <button id="btnImportarLegajos" type="button" class="btn-accent">Procesar Importación</button>
-            <button id="btnCancelarImport" type="button" class="btn-secondary">Cancelar</button>
-          </div>
-          <div id="msgImport" class="msg" aria-live="polite"></div>
         </div>
       </div>
     </section>
