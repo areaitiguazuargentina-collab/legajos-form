@@ -13,6 +13,7 @@
       <p class="muted">Sistema de registro y gestión de legajos</p>
     </header>
 
+    <!-- ====== VISTA PÚBLICA ====== -->
     <section id="publicSection" class="content-section">
       <div class="section-title">
         <h2>Registro de Ingreso</h2>
@@ -21,9 +22,7 @@
       <form id="frmIngreso" class="form-group">
         <div class="field">
           <label for="tokens">Legajos a registrar</label>
-          <div class="input-wrapper">
-            <input id="tokens" maxlength="300" required placeholder="Ej: 1162, 1163, C5..." autocomplete="off" />
-          </div>
+          <input id="tokens" maxlength="300" required placeholder="Ej: 1162, 1163, C5..." autocomplete="off" />
         </div>
 
         <div class="row mt-30 btn-container">
@@ -42,10 +41,12 @@
 
     <hr class="sep" />
 
+    <!-- ====== LOGIN ADMIN ====== -->
     <section id="adminLoginSection" class="content-section">
       <div class="section-title">
         <h2>🔐 Acceso Administración</h2>
       </div>
+
       <form id="frmAdminLogin" class="form-grid">
         <div class="field">
           <label for="adminEmail">Usuario</label>
@@ -64,6 +65,125 @@
 
         <div id="msgAdmin" class="msg" aria-live="polite"></div>
       </form>
+    </section>
+
+    <!-- ====== PANEL ADMIN (OCULTO HASTA LOGIN) ====== -->
+    <section id="adminPanelSection" class="content-section" style="display:none;">
+      <div class="section-title">
+        <h2>🧰 Panel Admin</h2>
+      </div>
+
+      <!-- Export por mes -->
+      <div class="panel-box">
+        <div class="row wrap">
+          <div class="field grow">
+            <label for="mes">Mes a exportar</label>
+            <input id="mes" type="month" />
+          </div>
+
+          <div class="row wrap grow-0" style="align-self:flex-end;">
+            <button id="btnCargarMes" type="button" class="btn-secondary">Cargar vista previa</button>
+            <button id="btnExportarMes" type="button" class="btn-primary">Exportar Excel</button>
+          </div>
+        </div>
+
+        <div id="mesInfo" class="muted mt-10"></div>
+
+        <div class="tableWrap">
+          <table id="tbl">
+            <thead>
+              <tr>
+                <th>Fecha/Hora</th>
+                <th>Legajo/Token</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <hr class="sep" />
+
+      <!-- ABM Legajos -->
+      <div class="panel-box">
+        <div class="section-title">
+          <h2>👤 ABM Legajos Activos</h2>
+        </div>
+
+        <div class="row wrap">
+          <div class="field grow">
+            <label for="buscarLegajo">Buscar</label>
+            <input id="buscarLegajo" placeholder="Buscar por legajo o nombre..." />
+          </div>
+        </div>
+
+        <div class="row wrap">
+          <div class="field grow">
+            <label for="nuevoLegajo">Nuevo legajo</label>
+            <input id="nuevoLegajo" placeholder="1162" maxlength="4" />
+          </div>
+
+          <div class="field grow">
+            <label for="nombreLegajo">Nombre (opcional)</label>
+            <input id="nombreLegajo" placeholder="Apellido Nombre" maxlength="60" />
+          </div>
+        </div>
+
+        <div class="row wrap btn-container mt-10">
+          <button id="btnAgregarLegajo" type="button" class="btn-accent">Agregar / Activar</button>
+          <button id="btnCargarLegajos" type="button" class="btn-secondary">Ver legajos</button>
+        </div>
+
+        <div id="msgLegajos" class="msg" aria-live="polite"></div>
+
+        <div class="row wrap pager mt-10">
+          <button id="btnPrevLegajos" type="button" class="btn-secondary">◀</button>
+          <div id="legajosPager" class="muted">—</div>
+          <button id="btnNextLegajos" type="button" class="btn-secondary">▶</button>
+        </div>
+
+        <div class="tableWrap">
+          <table id="tblLegajos">
+            <thead>
+              <tr>
+                <th>Legajo</th>
+                <th>Nombre</th>
+                <th>Activo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <hr class="sep" />
+
+      <!-- Importación masiva (oculta) -->
+      <div class="panel-box">
+        <div class="section-title">
+          <h2>📥 Importación masiva</h2>
+        </div>
+
+        <div class="row wrap">
+          <button id="btnUnlockImport" type="button" class="btn-secondary">Habilitar importación</button>
+        </div>
+
+        <div id="importBox" style="display:none;" class="mt-10">
+          <div class="field">
+            <label for="bulkLegajos">Pegá legajos (uno por línea o separados por coma/espacio)</label>
+            <textarea id="bulkLegajos" rows="10" placeholder="1162&#10;1163&#10;200&#10;501"></textarea>
+          </div>
+
+          <div class="row wrap btn-container mt-10">
+            <button id="btnImportarLegajos" type="button" class="btn-primary">Importar</button>
+            <button id="btnCancelarImport" type="button" class="btn-secondary">Cancelar</button>
+          </div>
+
+          <div id="msgImport" class="msg" aria-live="polite"></div>
+        </div>
+      </div>
+
     </section>
   </main>
 

@@ -47,6 +47,7 @@ const btnLimpiar = $("btnLimpiar");
 const msgPublic = $("msgPublic");
 const preview = $("preview");
 
+const adminLoginSection = $("adminLoginSection");
 const frmAdminLogin = $("frmAdminLogin");
 const adminEmail = $("adminEmail");
 const adminPass = $("adminPass");
@@ -85,7 +86,6 @@ function setMsg(el, text, type) {
   el.textContent = text || "";
   el.className = "msg " + (type || "");
 }
-
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -94,7 +94,6 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
 function formatErr(err) {
   const code = err?.code ? `(${err.code}) ` : "";
   const msg = err?.message || String(err || "Error");
@@ -122,7 +121,6 @@ function canonicalizeLegajoDigits(d) {
   const s = String(d).replace(/^0+/, "");
   return s === "" ? "0" : s;
 }
-
 function canonicalizeCToken(tok) {
   const m = String(tok).trim().match(RE_CTOKEN);
   if (!m) return null;
@@ -130,7 +128,6 @@ function canonicalizeCToken(tok) {
   if (!Number.isInteger(n) || n < MIN_C || n > MAX_C) return null;
   return `C${n}`; // siempre mayúscula
 }
-
 function isValidLegajoCanon(canon) {
   if (canon === "0") return true;
   if (!/^[1-9]\d{0,3}$/.test(canon)) return false;
@@ -152,29 +149,17 @@ function parseTokens(raw) {
   for (const t of tokens) {
     const cTok = canonicalizeCToken(t);
     if (cTok) {
-      if (!seen.has(cTok)) {
-        seen.add(cTok);
-        ok.push(cTok);
-      }
+      if (!seen.has(cTok)) { seen.add(cTok); ok.push(cTok); }
       continue;
     }
 
     const onlyDigits = t.replace(/\D/g, "");
-    if (!onlyDigits || onlyDigits.length > 4) {
-      bad.push(t);
-      continue;
-    }
+    if (!onlyDigits || onlyDigits.length > 4) { bad.push(t); continue; }
 
     const canon = canonicalizeLegajoDigits(onlyDigits);
-    if (!isValidLegajoCanon(canon)) {
-      bad.push(t);
-      continue;
-    }
+    if (!isValidLegajoCanon(canon)) { bad.push(t); continue; }
 
-    if (!seen.has(canon)) {
-      seen.add(canon);
-      ok.push(canon);
-    }
+    if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
   }
 
   return { ok, bad };
@@ -187,7 +172,6 @@ function refreshPreview() {
     `OK (${ok.length}): ${ok.join(", ")}\n` +
     (bad.length ? `\nINVALIDOS (${bad.length}): ${bad.join(", ")}` : "");
 }
-
 inputTokens?.addEventListener("input", refreshPreview);
 
 btnLimpiar?.addEventListener("click", () => {
@@ -215,23 +199,20 @@ function startCooldownCountdown() {
       clearInterval(cooldownTimer);
       cooldownTimer = null;
       btnIngreso.disabled = false;
-      btnIngreso.textContent = "Ingreso";
+      btnIngreso.textContent = "Enviar Registro"; // ✅ vuelve a tu texto real
       return;
     }
-
     btnIngreso.textContent = `Esperar ${remaining}s`;
   }, 1000);
 }
 
-// ===== Guardar ingreso (1 doc por token) =====
+// ===== Guardar ingreso =====
 frmIngreso?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
 
   const now = Date.now();
   const diff = (now - lastSubmitAt) / 1000;
-
-  // 🚫 Cooldown activo
   if (diff < COOLDOWN_SECONDS) {
     const remaining = Math.ceil(COOLDOWN_SECONDS - diff);
     return setMsg(msgPublic, `Esperá ${remaining}s antes de volver a enviar.`, "err");
@@ -273,7 +254,6 @@ frmIngreso?.addEventListener("submit", async (e) => {
     startCooldownCountdown();
 
     setMsg(msgPublic, `OK guardado (${ok.length}).`, "ok");
-
     if (inputTokens) {
       inputTokens.value = "";
       refreshPreview();
@@ -281,18 +261,12 @@ frmIngreso?.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     console.error(err);
-
     if (err?.code === "permission-denied") {
-      setMsg(
-        msgPublic,
-        "No permitido: legajo inexistente/no activo, token inválido o App Check/Rules bloqueando.",
-        "err"
-      );
+      setMsg(msgPublic, "No permitido: token inválido o rules bloqueando.", "err");
     } else {
       setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
     }
   } finally {
-    // 👇 IMPORTANTE: no “romper” el cooldown si está corriendo
     if (btnIngreso && !cooldownTimer) btnIngreso.disabled = false;
   }
 });
@@ -320,19 +294,23 @@ btnAdminLogout?.addEventListener("click", async () => {
 
 onAuthStateChanged(auth, async (user) => {
   const isPasswordUser = !!user?.providerData?.some((p) => p.providerId === "password");
+
   if (adminPanelSection) adminPanelSection.style.display = isPasswordUser ? "block" : "none";
-  if (btnAdminLogout) btnAdminLogout.style.display = user ? "inline-block" : "none";
+  if (adminLoginSection) adminLoginSection.style.display = isPasswordUser ? "none" : "block";
+  if (btnAdminLogout) btnAdminLogout.style.display = user ? "inline-flex" : "none";
 
   if (!user) {
-    try {
-      await ensureAnon();
-    } catch {}
+    try { await ensureAnon(); } catch {}
+  }
+
+  // Si entró admin, setea mes actual por defecto y (opcional) scroll al panel
+  if (isPasswordUser) {
+    setMesActual();
+    adminPanelSection?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 });
 
 // ===== Mes: preview + export =====
-setMesActual();
-
 function setMesActual() {
   if (!mesInput) return;
   const d = new Date();
@@ -385,8 +363,8 @@ async function loadMonthPreview(yyyyMm) {
   );
 
   const snap = await getDocs(qPrev);
-
   const rows = [];
+
   snap.forEach((docu) => {
     const d = docu.data();
     const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
@@ -407,15 +385,12 @@ btnCargarMes?.addEventListener("click", async () => {
     const yyyyMm = mesInput?.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    if (btnCargarMes) btnCargarMes.disabled = true;
+    btnCargarMes.disabled = true;
 
     const { total, rows } = await loadMonthPreview(yyyyMm);
 
     if (mesInfo) {
-      mesInfo.textContent = `Total del mes: ${total}. Mostrando vista previa: ${Math.min(
-        PREVIEW_LIMIT,
-        total
-      )}.`;
+      mesInfo.textContent = `Total del mes: ${total}. Mostrando vista previa: ${Math.min(PREVIEW_LIMIT, total)}.`;
     }
 
     if (tblBody) {
@@ -431,7 +406,7 @@ btnCargarMes?.addEventListener("click", async () => {
     console.error(err);
     setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
   } finally {
-    if (btnCargarMes) btnCargarMes.disabled = false;
+    btnCargarMes.disabled = false;
   }
 });
 
@@ -452,7 +427,6 @@ async function exportMonthToExcel(yyyyMm) {
     ];
 
     const qPage = lastDoc ? query(...base, startAfter(lastDoc)) : query(...base);
-
     const snap = await getDocs(qPage);
     if (snap.empty) break;
 
@@ -493,13 +467,13 @@ btnExportarMes?.addEventListener("click", async () => {
     const yyyyMm = mesInput?.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    if (btnExportarMes) btnExportarMes.disabled = true;
+    btnExportarMes.disabled = true;
     if (mesInfo) mesInfo.textContent = "Preparando exportación...";
 
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
 
-    if (!total || total === 0) {
+    if (!total) {
       if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
@@ -520,11 +494,11 @@ btnExportarMes?.addEventListener("click", async () => {
     if (mesInfo) mesInfo.textContent = "";
     setMsg(msgAdmin, `Error exportando:\n${formatErr(err)}`, "err");
   } finally {
-    if (btnExportarMes) btnExportarMes.disabled = false;
+    btnExportarMes.disabled = false;
   }
 });
 
-// ===== ABM Legajos (buscador + paginación) =====
+// ===== ABM Legajos =====
 let legajosCache = [];
 let pageIndex = 0;
 
@@ -532,8 +506,8 @@ function renderLegajos() {
   if (!tblLegajosBody) return;
 
   const qText = String(buscarLegajo?.value || "").trim().toLowerCase();
-
   let filtered = legajosCache;
+
   if (qText) {
     filtered = legajosCache.filter(
       (x) => String(x.leg).includes(qText) || String(x.nombre || "").toLowerCase().includes(qText)
@@ -542,7 +516,6 @@ function renderLegajos() {
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LEGAJOS_PAGE_SIZE));
-
   if (pageIndex >= totalPages) pageIndex = totalPages - 1;
   if (pageIndex < 0) pageIndex = 0;
 
@@ -551,10 +524,8 @@ function renderLegajos() {
 
   if (legajosPager) {
     legajosPager.textContent = total
-      ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${
-          pageIndex + 1
-        }/${totalPages})`
-      : `Sin resultados`;
+      ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${pageIndex + 1}/${totalPages})`
+      : "Sin resultados";
   }
 
   if (btnPrevLegajos) btnPrevLegajos.disabled = pageIndex === 0;
@@ -569,7 +540,7 @@ function renderLegajos() {
       <td>${escapeHtml(x.nombre || "")}</td>
       <td>${x.activo ? "Sí" : "No"}</td>
       <td>
-        <button data-leg="${escapeHtml(x.leg)}" class="secondary btnToggleActivo">
+        <button data-leg="${escapeHtml(x.leg)}" class="btn-secondary btnToggleActivo">
           ${x.activo ? "Desactivar" : "Activar"}
         </button>
       </td>
@@ -592,7 +563,6 @@ function renderLegajos() {
         });
 
         if (current) current.activo = nextActivo;
-
         setMsg(msgLegajos, `OK. Legajo ${leg} ${nextActivo ? "activado" : "desactivado"}.`, "ok");
         renderLegajos();
       } catch (err) {
@@ -663,20 +633,11 @@ btnCargarLegajos?.addEventListener("click", async () => {
   }
 });
 
-buscarLegajo?.addEventListener("input", () => {
-  pageIndex = 0;
-  renderLegajos();
-});
-btnPrevLegajos?.addEventListener("click", () => {
-  pageIndex--;
-  renderLegajos();
-});
-btnNextLegajos?.addEventListener("click", () => {
-  pageIndex++;
-  renderLegajos();
-});
+buscarLegajo?.addEventListener("input", () => { pageIndex = 0; renderLegajos(); });
+btnPrevLegajos?.addEventListener("click", () => { pageIndex--; renderLegajos(); });
+btnNextLegajos?.addEventListener("click", () => { pageIndex++; renderLegajos(); });
 
-// ===== Importación masiva =====
+// ===== Importación masiva (10 clics) =====
 let unlockClicks = 0;
 let importUnlocked = false;
 
@@ -708,19 +669,10 @@ function parseLegajosFromBulk(text) {
 
   for (const p of parts) {
     const digits = p.replace(/\D/g, "");
-    if (!digits || digits.length > 4) {
-      invalid.push(p);
-      continue;
-    }
+    if (!digits || digits.length > 4) { invalid.push(p); continue; }
     const canon = canonicalizeLegajoDigits(digits);
-    if (!isValidLegajoCanon(canon)) {
-      invalid.push(p);
-      continue;
-    }
-    if (!seen.has(canon)) {
-      seen.add(canon);
-      ok.push(canon);
-    }
+    if (!isValidLegajoCanon(canon)) { invalid.push(p); continue; }
+    if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
   }
   return { ok, invalid };
 }
@@ -743,7 +695,7 @@ btnImportarLegajos?.addEventListener("click", async () => {
 
     if (!confirm(`Se activarán ${ok.length} legajos. ¿Continuar?`)) return;
 
-    if (btnImportarLegajos) btnImportarLegajos.disabled = true;
+    btnImportarLegajos.disabled = true;
 
     let imported = 0;
     for (let i = 0; i < ok.length; i += 450) {
@@ -766,9 +718,7 @@ btnImportarLegajos?.addEventListener("click", async () => {
     setMsg(
       msgImport,
       `OK importados/activados: ${imported}` +
-        (invalid.length
-          ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}`
-          : ""),
+        (invalid.length ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}` : ""),
       "ok"
     );
 
@@ -780,14 +730,13 @@ btnImportarLegajos?.addEventListener("click", async () => {
     console.error(err);
     setMsg(msgImport, `Error:\n${formatErr(err)}`, "err");
   } finally {
-    if (btnImportarLegajos) btnImportarLegajos.disabled = false;
+    btnImportarLegajos.disabled = false;
   }
 });
 
 // ===== Init =====
 (async function init() {
-  try {
-    await ensureAnon();
-  } catch {}
+  try { await ensureAnon(); } catch {}
   refreshPreview();
+  setMesActual(); // deja listo el input month (aunque no esté logueado)
 })();
