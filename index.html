@@ -13,7 +13,6 @@
       <p class="muted">Sistema de registro y gestión de legajos</p>
     </header>
 
-    <!-- ====== VISTA PÚBLICA ====== -->
     <section id="publicSection" class="content-section">
       <div class="section-title">
         <h2>Registro de Ingreso</h2>
@@ -41,7 +40,6 @@
 
     <hr class="sep" />
 
-    <!-- ====== LOGIN ADMIN ====== -->
     <section id="adminLoginSection" class="content-section">
       <div class="section-title">
         <h2>🔐 Acceso Administración</h2>
@@ -67,13 +65,11 @@
       </form>
     </section>
 
-    <!-- ====== PANEL ADMIN (OCULTO HASTA LOGIN) ====== -->
     <section id="adminPanelSection" class="content-section" style="display:none;">
       <div class="section-title">
         <h2>🧰 Panel Admin</h2>
       </div>
 
-      <!-- Export por mes -->
       <div class="panel-box">
         <div class="row wrap">
           <div class="field grow">
@@ -88,6 +84,12 @@
         </div>
 
         <div id="mesInfo" class="muted mt-10"></div>
+
+        <div class="row wrap pager mt-10">
+          <button id="btnPrevMes" type="button" class="btn-secondary">◀</button>
+          <div id="mesPager" class="muted">—</div>
+          <button id="btnNextMes" type="button" class="btn-secondary">▶</button>
+        </div>
 
         <div class="tableWrap">
           <table id="tbl">
@@ -104,7 +106,6 @@
 
       <hr class="sep" />
 
-      <!-- ABM Legajos -->
       <div class="panel-box">
         <div class="section-title">
           <h2>👤 ABM Legajos Activos</h2>
@@ -159,7 +160,6 @@
 
       <hr class="sep" />
 
-      <!-- Importación masiva (oculta) -->
       <div class="panel-box">
         <div class="section-title">
           <h2>📥 Importación masiva</h2>

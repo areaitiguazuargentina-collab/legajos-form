@@ -33,7 +33,8 @@ const MAX_TOKENS_PER_SUBMIT = 50;
 const MIN_C = 1;
 const MAX_C = 99;
 
-const PREVIEW_LIMIT = 50;
+const PREVIEW_LIMIT = 100; // Cargamos hasta 100 para la vista previa
+const PREVIEW_PAGE_SIZE = 5; // Pero mostramos de a 5
 const EXPORT_PAGE_SIZE = 1000;
 const LEGAJOS_PAGE_SIZE = 5;
 
@@ -61,6 +62,9 @@ const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
 const mesInfo = $("mesInfo");
 const tblBody = $("tbl")?.querySelector("tbody");
+const btnPrevMes = $("btnPrevMes");
+const btnNextMes = $("btnNextMes");
+const mesPager = $("mesPager");
 
 const nuevoLegajo = $("nuevoLegajo");
 const nombreLegajo = $("nombreLegajo");
@@ -126,7 +130,7 @@ function canonicalizeCToken(tok) {
   if (!m) return null;
   const n = Number(m[1]);
   if (!Number.isInteger(n) || n < MIN_C || n > MAX_C) return null;
-  return `C${n}`; // siempre mayúscula
+  return `C${n}`;
 }
 function isValidLegajoCanon(canon) {
   if (canon === "0") return true;
@@ -185,21 +189,17 @@ btnLimpiar?.addEventListener("click", () => {
 // ===== Cooldown UI =====
 function startCooldownCountdown() {
   if (!btnIngreso) return;
-
   let remaining = COOLDOWN_SECONDS;
   btnIngreso.disabled = true;
   btnIngreso.textContent = `Esperar ${remaining}s`;
-
   if (cooldownTimer) clearInterval(cooldownTimer);
-
   cooldownTimer = setInterval(() => {
     remaining--;
-
     if (remaining <= 0) {
       clearInterval(cooldownTimer);
       cooldownTimer = null;
       btnIngreso.disabled = false;
-      btnIngreso.textContent = "Enviar Registro"; // ✅ vuelve a tu texto real
+      btnIngreso.textContent = "Enviar Registro";
       return;
     }
     btnIngreso.textContent = `Esperar ${remaining}s`;
@@ -210,34 +210,26 @@ function startCooldownCountdown() {
 frmIngreso?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
-
   const now = Date.now();
   const diff = (now - lastSubmitAt) / 1000;
   if (diff < COOLDOWN_SECONDS) {
     const remaining = Math.ceil(COOLDOWN_SECONDS - diff);
     return setMsg(msgPublic, `Esperá ${remaining}s antes de volver a enviar.`, "err");
   }
-
   if (btnIngreso) btnIngreso.disabled = true;
-
   try {
     await ensureAnon();
-
     const raw = inputTokens?.value || "";
     const { ok, bad } = parseTokens(raw);
-
     if (!ok.length) return setMsg(msgPublic, "No hay legajos válidos.", "err");
     if (bad.length) return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
     if (ok.length > MAX_TOKENS_PER_SUBMIT) {
       return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
     }
-
     const uid = auth.currentUser?.uid || "anon";
-
     const writes = ok.map((t) => {
       const isC = /^C\d+$/.test(t);
       const cantidadC = isC ? Number(t.slice(1)) : 0;
-
       return addDoc(collection(db, "registros_tokens"), {
         createdAt: Timestamp.now(),
         token: t,
@@ -247,12 +239,9 @@ frmIngreso?.addEventListener("submit", async (e) => {
         uid,
       });
     });
-
     await Promise.all(writes);
-
     lastSubmitAt = Date.now();
     startCooldownCountdown();
-
     setMsg(msgPublic, `OK guardado (${ok.length}).`, "ok");
     if (inputTokens) {
       inputTokens.value = "";
@@ -275,7 +264,6 @@ frmIngreso?.addEventListener("submit", async (e) => {
 frmAdminLogin?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgAdmin, "", "");
-
   try {
     if (btnAdminLogin) btnAdminLogin.disabled = true;
     await signInWithEmailAndPassword(auth, adminEmail.value.trim(), adminPass.value);
@@ -294,16 +282,10 @@ btnAdminLogout?.addEventListener("click", async () => {
 
 onAuthStateChanged(auth, async (user) => {
   const isPasswordUser = !!user?.providerData?.some((p) => p.providerId === "password");
-
   if (adminPanelSection) adminPanelSection.style.display = isPasswordUser ? "block" : "none";
   if (adminLoginSection) adminLoginSection.style.display = isPasswordUser ? "none" : "block";
   if (btnAdminLogout) btnAdminLogout.style.display = user ? "inline-flex" : "none";
-
-  if (!user) {
-    try { await ensureAnon(); } catch {}
-  }
-
-  // Si entró admin, setea mes actual por defecto y (opcional) scroll al panel
+  if (!user) { try { await ensureAnon(); } catch {} }
   if (isPasswordUser) {
     setMesActual();
     adminPanelSection?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -311,6 +293,10 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ===== Mes: preview + export =====
+let monthPreviewCache = [];
+let monthPageIndex = 0;
+let monthTotalRecords = 0;
+
 function setMesActual() {
   if (!mesInput) return;
   const d = new Date();
@@ -327,18 +313,84 @@ function getMonthRange(yyyyMm) {
 
 function formatFechaHoraMin(dateObj) {
   return dateObj.toLocaleString("es-AR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
-function clearMonthTable() {
-  if (tblBody) tblBody.innerHTML = "";
-  if (mesInfo) mesInfo.textContent = "";
+function renderMonthPreview() {
+  if (!tblBody) return;
+  const total = monthPreviewCache.length;
+  const totalPages = Math.max(1, Math.ceil(total / PREVIEW_PAGE_SIZE));
+
+  if (monthPageIndex >= totalPages) monthPageIndex = totalPages - 1;
+  if (monthPageIndex < 0) monthPageIndex = 0;
+
+  const start = monthPageIndex * PREVIEW_PAGE_SIZE;
+  const slice = monthPreviewCache.slice(start, start + PREVIEW_PAGE_SIZE);
+
+  if (mesPager) {
+    mesPager.textContent = total
+      ? `Página ${monthPageIndex + 1} de ${totalPages} (Mostrando ${start + 1}-${Math.min(start + PREVIEW_PAGE_SIZE, total)} de ${monthTotalRecords} totales)`
+      : "Sin datos";
+  }
+
+  if (btnPrevMes) btnPrevMes.disabled = monthPageIndex === 0;
+  if (btnNextMes) btnNextMes.disabled = monthPageIndex >= totalPages - 1;
+
+  tblBody.innerHTML = "";
+  for (const r of slice) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
+    tblBody.appendChild(tr);
+  }
 }
+
+btnCargarMes?.addEventListener("click", async () => {
+  setMsg(msgAdmin, "", "");
+  monthPreviewCache = [];
+  monthPageIndex = 0;
+  if (tblBody) tblBody.innerHTML = "";
+
+  try {
+    const yyyyMm = mesInput?.value;
+    if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
+
+    btnCargarMes.disabled = true;
+    const { start, end } = getMonthRange(yyyyMm);
+    monthTotalRecords = await getMonthCount(start, end);
+
+    const qPrev = query(
+      collection(db, "registros_tokens"),
+      where("createdAt", ">=", start),
+      where("createdAt", "<", end),
+      orderBy("createdAt", "asc"),
+      limit(PREVIEW_LIMIT)
+    );
+
+    const snap = await getDocs(qPrev);
+    snap.forEach((docu) => {
+      const d = docu.data();
+      const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
+      monthPreviewCache.push({
+        FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
+        Legajo: d.token ?? "",
+      });
+    });
+
+    renderMonthPreview();
+    if (mesInfo) mesInfo.textContent = `Total del mes: ${monthTotalRecords}.`;
+    setMsg(msgAdmin, "OK.", "ok");
+  } catch (err) {
+    console.error(err);
+    setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
+  } finally {
+    btnCargarMes.disabled = false;
+  }
+});
+
+btnPrevMes?.addEventListener("click", () => { monthPageIndex--; renderMonthPreview(); });
+btnNextMes?.addEventListener("click", () => { monthPageIndex++; renderMonthPreview(); });
 
 async function getMonthCount(start, end) {
   const qCount = query(
@@ -350,73 +402,11 @@ async function getMonthCount(start, end) {
   return snap.data().count || 0;
 }
 
-async function loadMonthPreview(yyyyMm) {
-  const { start, end } = getMonthRange(yyyyMm);
-  const total = await getMonthCount(start, end);
-
-  const qPrev = query(
-    collection(db, "registros_tokens"),
-    where("createdAt", ">=", start),
-    where("createdAt", "<", end),
-    orderBy("createdAt", "asc"),
-    limit(PREVIEW_LIMIT)
-  );
-
-  const snap = await getDocs(qPrev);
-  const rows = [];
-
-  snap.forEach((docu) => {
-    const d = docu.data();
-    const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
-    rows.push({
-      FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
-      Legajo: d.token ?? "",
-    });
-  });
-
-  return { total, rows };
-}
-
-btnCargarMes?.addEventListener("click", async () => {
-  setMsg(msgAdmin, "", "");
-  clearMonthTable();
-
-  try {
-    const yyyyMm = mesInput?.value;
-    if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
-
-    btnCargarMes.disabled = true;
-
-    const { total, rows } = await loadMonthPreview(yyyyMm);
-
-    if (mesInfo) {
-      mesInfo.textContent = `Total del mes: ${total}. Mostrando vista previa: ${Math.min(PREVIEW_LIMIT, total)}.`;
-    }
-
-    if (tblBody) {
-      for (const r of rows) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
-        tblBody.appendChild(tr);
-      }
-    }
-
-    setMsg(msgAdmin, "OK.", "ok");
-  } catch (err) {
-    console.error(err);
-    setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
-  } finally {
-    btnCargarMes.disabled = false;
-  }
-});
-
 async function exportMonthToExcel(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
-
   let allRows = [];
   let lastDoc = null;
   let fetched = 0;
-
   while (true) {
     const base = [
       collection(db, "registros_tokens"),
@@ -425,11 +415,9 @@ async function exportMonthToExcel(yyyyMm) {
       orderBy("createdAt", "asc"),
       limit(EXPORT_PAGE_SIZE),
     ];
-
     const qPage = lastDoc ? query(...base, startAfter(lastDoc)) : query(...base);
     const snap = await getDocs(qPage);
     if (snap.empty) break;
-
     snap.forEach((docu) => {
       const d = docu.data();
       const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
@@ -438,55 +426,39 @@ async function exportMonthToExcel(yyyyMm) {
         Legajo: d.token ?? "",
       });
     });
-
     fetched += snap.size;
     lastDoc = snap.docs[snap.docs.length - 1];
-
     if (mesInfo) mesInfo.textContent = `Exportando... ${fetched} filas leídas`;
     if (snap.size < EXPORT_PAGE_SIZE) break;
   }
-
   if (!allRows.length) return { filename: null, rows: 0 };
-
   const ws = XLSX.utils.json_to_sheet(allRows, { header: ["FechaHora", "Legajo"] });
   ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Registros");
-
   const filename = `control_colectivos_${yyyyMm}.xlsx`;
   XLSX.writeFile(wb, filename, { compression: true });
-
   return { filename, rows: allRows.length };
 }
 
 btnExportarMes?.addEventListener("click", async () => {
   setMsg(msgAdmin, "", "");
-
   try {
     const yyyyMm = mesInput?.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
-
     btnExportarMes.disabled = true;
     if (mesInfo) mesInfo.textContent = "Preparando exportación...";
-
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
-
     if (!total) {
       if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
-
-    if (mesInfo) mesInfo.textContent = `Exportando... (total estimado: ${total})`;
-
     const res = await exportMonthToExcel(yyyyMm);
-
     if (!res.filename || res.rows === 0) {
       if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
-
     if (mesInfo) mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
     setMsg(msgAdmin, "OK.", "ok");
   } catch (err) {
@@ -504,35 +476,27 @@ let pageIndex = 0;
 
 function renderLegajos() {
   if (!tblLegajosBody) return;
-
   const qText = String(buscarLegajo?.value || "").trim().toLowerCase();
   let filtered = legajosCache;
-
   if (qText) {
     filtered = legajosCache.filter(
       (x) => String(x.leg).includes(qText) || String(x.nombre || "").toLowerCase().includes(qText)
     );
   }
-
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LEGAJOS_PAGE_SIZE));
   if (pageIndex >= totalPages) pageIndex = totalPages - 1;
   if (pageIndex < 0) pageIndex = 0;
-
   const start = pageIndex * LEGAJOS_PAGE_SIZE;
   const slice = filtered.slice(start, start + LEGAJOS_PAGE_SIZE);
-
   if (legajosPager) {
     legajosPager.textContent = total
       ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${pageIndex + 1}/${totalPages})`
       : "Sin resultados";
   }
-
   if (btnPrevLegajos) btnPrevLegajos.disabled = pageIndex === 0;
   if (btnNextLegajos) btnNextLegajos.disabled = pageIndex >= totalPages - 1;
-
   tblLegajosBody.innerHTML = "";
-
   for (const x of slice) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -547,21 +511,16 @@ function renderLegajos() {
     `;
     tblLegajosBody.appendChild(tr);
   }
-
   tblLegajosBody.querySelectorAll(".btnToggleActivo").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const leg = btn.getAttribute("data-leg");
       if (!leg) return;
-
       try {
         const current = legajosCache.find((x) => x.leg === leg);
         const nextActivo = !(current?.activo);
-
         await updateDoc(doc(db, "legajos_activos", leg), {
-          activo: nextActivo,
-          updatedAt: Timestamp.now(),
+          activo: nextActivo, updatedAt: Timestamp.now(),
         });
-
         if (current) current.activo = nextActivo;
         setMsg(msgLegajos, `OK. Legajo ${leg} ${nextActivo ? "activado" : "desactivado"}.`, "ok");
         renderLegajos();
@@ -583,20 +542,12 @@ function canonLegajoFromInput(v) {
 
 btnAgregarLegajo?.addEventListener("click", async () => {
   setMsg(msgLegajos, "", "");
-
   try {
     const canon = canonLegajoFromInput(nuevoLegajo?.value);
     if (!canon) return setMsg(msgLegajos, "Legajo inválido (0..9999).", "err");
-    if (canon === "0") return setMsg(msgLegajos, "El legajo 0 no se administra (siempre permitido).", "err");
-
+    if (canon === "0") return setMsg(msgLegajos, "El legajo 0 no se administra.", "err");
     const nombre = String(nombreLegajo?.value || "").trim().slice(0, 60);
-
-    await setDoc(
-      doc(db, "legajos_activos", canon),
-      { activo: true, nombre, updatedAt: Timestamp.now() },
-      { merge: true }
-    );
-
+    await setDoc(doc(db, "legajos_activos", canon), { activo: true, nombre, updatedAt: Timestamp.now() }, { merge: true });
     setMsg(msgLegajos, `OK. Legajo ${canon} activado.`, "ok");
     if (nuevoLegajo) nuevoLegajo.value = "";
     if (nombreLegajo) nombreLegajo.value = "";
@@ -611,20 +562,13 @@ btnCargarLegajos?.addEventListener("click", async () => {
   if (tblLegajosBody) tblLegajosBody.innerHTML = "";
   legajosCache = [];
   pageIndex = 0;
-
   try {
     const qLeg = query(collection(db, "legajos_activos"), orderBy("activo", "desc"), limit(5000));
     const snap = await getDocs(qLeg);
-
     snap.forEach((d) => {
       const data = d.data();
-      legajosCache.push({
-        leg: d.id,
-        nombre: data.nombre ?? "",
-        activo: !!data.activo,
-      });
+      legajosCache.push({ leg: d.id, nombre: data.nombre ?? "", activo: !!data.activo });
     });
-
     renderLegajos();
     setMsg(msgLegajos, "Listado cargado.", "ok");
   } catch (err) {
@@ -637,36 +581,25 @@ buscarLegajo?.addEventListener("input", () => { pageIndex = 0; renderLegajos(); 
 btnPrevLegajos?.addEventListener("click", () => { pageIndex--; renderLegajos(); });
 btnNextLegajos?.addEventListener("click", () => { pageIndex++; renderLegajos(); });
 
-// ===== Importación masiva (10 clics) =====
+// ===== Importación masiva =====
 let unlockClicks = 0;
 let importUnlocked = false;
-
 btnUnlockImport?.addEventListener("click", () => {
   unlockClicks++;
-  if (unlockClicks >= 10) {
-    importUnlocked = true;
-    if (importBox) importBox.style.display = "block";
-  }
+  if (unlockClicks >= 10) { importUnlocked = true; if (importBox) importBox.style.display = "block"; }
 });
-
 btnCancelarImport?.addEventListener("click", () => {
-  importUnlocked = false;
-  unlockClicks = 0;
+  importUnlocked = false; unlockClicks = 0;
   if (importBox) importBox.style.display = "none";
   if (bulkLegajos) bulkLegajos.value = "";
   setMsg(msgImport, "", "");
 });
 
 function parseLegajosFromBulk(text) {
-  const parts = String(text || "")
-    .split(/[,\s;\t\r\n]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
+  const parts = String(text || "").split(/[,\s;\t\r\n]+/g).map((s) => s.trim()).filter(Boolean);
   const seen = new Set();
   const ok = [];
   const invalid = [];
-
   for (const p of parts) {
     const digits = p.replace(/\D/g, "");
     if (!digits || digits.length > 4) { invalid.push(p); continue; }
@@ -685,58 +618,37 @@ function requireAdminOrThrow() {
 
 btnImportarLegajos?.addEventListener("click", async () => {
   setMsg(msgImport, "", "");
-
   try {
     requireAdminOrThrow();
     if (!importUnlocked) return;
-
     const { ok, invalid } = parseLegajosFromBulk(bulkLegajos?.value);
     if (!ok.length) return setMsg(msgImport, "No encontré legajos válidos.", "err");
-
     if (!confirm(`Se activarán ${ok.length} legajos. ¿Continuar?`)) return;
-
     btnImportarLegajos.disabled = true;
-
     let imported = 0;
     for (let i = 0; i < ok.length; i += 450) {
       const slice = ok.slice(i, i + 450);
       const batch = writeBatch(db);
-
       for (const leg of slice) {
         if (leg === "0") continue;
-        batch.set(
-          doc(db, "legajos_activos", leg),
-          { activo: true, updatedAt: Timestamp.now() },
-          { merge: true }
-        );
+        batch.set(doc(db, "legajos_activos", leg), { activo: true, updatedAt: Timestamp.now() }, { merge: true });
         imported++;
       }
-
       await batch.commit();
     }
-
-    setMsg(
-      msgImport,
-      `OK importados/activados: ${imported}` +
-        (invalid.length ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}` : ""),
-      "ok"
-    );
-
-    importUnlocked = false;
-    unlockClicks = 0;
+    setMsg(msgImport, `OK: ${imported}` + (invalid.length ? `\nInválidos: ${invalid.slice(0, 10).join(", ")}` : ""), "ok");
+    importUnlocked = false; unlockClicks = 0;
     if (importBox) importBox.style.display = "none";
     if (bulkLegajos) bulkLegajos.value = "";
   } catch (err) {
     console.error(err);
     setMsg(msgImport, `Error:\n${formatErr(err)}`, "err");
-  } finally {
-    btnImportarLegajos.disabled = false;
-  }
+  } finally { btnImportarLegajos.disabled = false; }
 });
 
 // ===== Init =====
 (async function init() {
   try { await ensureAnon(); } catch {}
   refreshPreview();
-  setMesActual(); // deja listo el input month (aunque no esté logueado)
+  setMesActual();
 })();
