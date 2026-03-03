@@ -21,7 +21,7 @@
 
       <form id="frmIngreso">
         <label for="tokens">Legajos / Empresa</label>
-        <input id="tokens" maxlength="300" required placeholder="0,22,1162,C5" autocomplete="off" />
+        <input id="tokens" maxlength="300" required placeholder="1162,0,1,C2" autocomplete="off" />
 
         <div class="row">
           <button id="btnIngreso" type="submit">Ingreso</button>
@@ -62,13 +62,17 @@
     <section id="adminPanelSection" style="display:none;">
       <h2>Panel Admin</h2>
 
+      <!-- Export por mes -->
+      <label for="mes">Mes a exportar</label>
+      <input id="mes" type="month" />
+
       <div class="row wrap">
-        <button id="btnCargar">Cargar últimos 500</button>
-        <button id="btnExportar" class="secondary">Exportar a Excel</button>
+        <button id="btnCargarMes" type="button">Cargar mes</button>
+        <button id="btnExportarMes" type="button" class="secondary">Exportar mes a Excel</button>
       </div>
 
       <p class="muted">
-        Exporta columnas: fecha/hora, token (legajo o C#), empresaC (total), raw, uid.
+        Exporta: <b>FechaHora (dd/mm/aaaa hh:mm)</b> + <b>Legajo/Token</b> (1 por fila).
       </p>
 
       <div class="tableWrap">
@@ -76,10 +80,48 @@
           <thead>
             <tr>
               <th>Fecha/Hora</th>
-              <th>Tokens</th>
-              <th>Total C</th>
-              <th>Raw</th>
-              <th>UID</th>
+              <th>Legajo/Token</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <hr class="sep" />
+
+      <!-- ABM Legajos activos -->
+      <h2>ABM Legajos activos</h2>
+      <p class="muted">
+        Estos legajos son los permitidos. El público solo podrá guardar legajos que existan acá (salvo <code>0</code>).<br>
+        C# siempre permitido (C1..C99).
+      </p>
+
+      <div class="row wrap">
+        <div style="flex:1; min-width:240px;">
+          <label for="nuevoLegajo">Nuevo legajo (0..9999)</label>
+          <input id="nuevoLegajo" placeholder="1162" maxlength="4" />
+        </div>
+        <div style="flex:1; min-width:240px;">
+          <label for="nombreLegajo">Nombre (opcional)</label>
+          <input id="nombreLegajo" placeholder="Apellido Nombre" maxlength="60" />
+        </div>
+      </div>
+
+      <div class="row wrap">
+        <button id="btnAgregarLegajo" type="button">Agregar / Activar</button>
+        <button id="btnCargarLegajos" type="button" class="secondary">Ver legajos activos</button>
+      </div>
+
+      <div id="msgLegajos" class="msg" aria-live="polite"></div>
+
+      <div class="tableWrap">
+        <table id="tblLegajos">
+          <thead>
+            <tr>
+              <th>Legajo</th>
+              <th>Nombre</th>
+              <th>Activo</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -88,7 +130,7 @@
     </section>
 
     <footer class="muted">
-      <small>Firestore guarda los ingresos. Lectura permitida solo al admin vía Rules.</small>
+      <small>GitHub Pages aloja la web. Firebase = Auth + Firestore. Lectura/ABM solo admin vía Rules.</small>
     </footer>
   </main>
 
