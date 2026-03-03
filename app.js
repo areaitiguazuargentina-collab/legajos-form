@@ -442,26 +442,42 @@ async function exportMonthToExcel(yyyyMm) {
 }
 
 btnExportarMes?.addEventListener("click", async () => {
+  // 1. Limpiamos mensajes anteriores
   setMsg(msgAdmin, "", "");
+  
   try {
     const yyyyMm = mesInput?.value;
-    if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
+    if (!yyyyMm) return setMsg(msgAdmin, "Por favor, elegí un mes primero.", "err");
+
     btnExportarMes.disabled = true;
-    if (mesInfo) mesInfo.textContent = "Preparando exportación...";
+    if (mesInfo) mesInfo.textContent = "Verificando datos...";
+
+    // 2. Obtenemos el rango y contamos cuántos documentos hay
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
-    if (!total) {
-      console.log(mesInfo)
-      if (mesInfo) mesInfo.textContent = "";
-      return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+
+    // --- EL CAMBIO CLAVE: Validación de existencia ---
+    if (total === 0) {
+      if (mesInfo) mesInfo.textContent = ""; // Limpiamos el texto de carga
+      btnExportarMes.disabled = false;
+      return setMsg(msgAdmin, "❌ Error: No existen datos para exportar en el mes seleccionado.", "err");
     }
+    // ------------------------------------------------
+
+    if (mesInfo) mesInfo.textContent = "Preparando exportación...";
+    
+    // 3. Ejecutamos la exportación si hay datos
     const res = await exportMonthToExcel(yyyyMm);
+
     if (!res.filename || res.rows === 0) {
       if (mesInfo) mesInfo.textContent = "";
-      return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+      return setMsg(msgAdmin, "No se encontraron registros para procesar.", "err");
     }
-    if (mesInfo) mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
-    setMsg(msgAdmin, "OK.", "ok");
+
+    // 4. Éxito
+    if (mesInfo) mesInfo.textContent = `✅ Exportado: ${res.filename} (${res.rows} filas)`;
+    setMsg(msgAdmin, "Exportación completada con éxito.", "ok");
+
   } catch (err) {
     console.error(err);
     if (mesInfo) mesInfo.textContent = "";
