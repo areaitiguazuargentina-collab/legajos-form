@@ -12,7 +12,9 @@ import {
   doc,
   setDoc,
   updateDoc,
-  writeBatch
+  writeBatch,
+  getCountFromServer,
+  startAfter
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getAuth,
@@ -26,6 +28,10 @@ const MAX_INPUT_LEN = 300;
 const MAX_TOKENS_PER_SUBMIT = 50;
 const MIN_C = 1;
 const MAX_C = 99;
+
+const PREVIEW_LIMIT = 50;        // vista previa al cargar mes
+const EXPORT_PAGE_SIZE = 1000;   // paginado para export
+const LEGAJOS_PAGE_SIZE = 5;
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,6 +53,7 @@ const adminPanelSection = $("adminPanelSection");
 const mesInput = $("mes");
 const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
+const mesInfo = $("mesInfo");
 const tblBody = $("tbl").querySelector("tbody");
 
 const nuevoLegajo = $("nuevoLegajo");
@@ -55,10 +62,12 @@ const btnAgregarLegajo = $("btnAgregarLegajo");
 const btnCargarLegajos = $("btnCargarLegajos");
 const msgLegajos = $("msgLegajos");
 const tblLegajosBody = $("tblLegajos").querySelector("tbody");
+const buscarLegajo = $("buscarLegajo");
+const btnPrevLegajos = $("btnPrevLegajos");
+const btnNextLegajos = $("btnNextLegajos");
+const legajosPager = $("legajosPager");
 
-// Import masivo
 const btnUnlockImport = $("btnUnlockImport");
-const importHint = $("importHint");
 const importBox = $("importBox");
 const bulkLegajos = $("bulkLegajos");
 const btnImportarLegajos = $("btnImportarLegajos");
@@ -80,13 +89,18 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function formatErr(err) {
+  const code = err?.code ? `(${err.code}) ` : "";
+  const msg = err?.message || String(err || "Error");
+  return `${code}${msg}`;
+}
+
 // Firebase init
 if (!window.FIREBASE_CONFIG) {
   setMsg(msgPublic, "Falta firebase-config.js (window.FIREBASE_CONFIG).", "err");
   btnIngreso.disabled = true;
   throw new Error("Missing FIREBASE_CONFIG");
 }
-
 const app = initializeApp(window.FIREBASE_CONFIG);
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -119,10 +133,6 @@ function isValidLegajoCanon(canon) {
 }
 
 function parseTokens(raw) {
-  // Soporta copiar/pegar desde Excel:
-  // - saltos de línea
-  // - tabs
-  // - comas, punto y coma, espacios
   const tokens = String(raw || "")
     .slice(0, MAX_INPUT_LEN)
     .split(/[,\s;\t\r\n]+/g)
@@ -134,25 +144,17 @@ function parseTokens(raw) {
   const bad = [];
 
   for (const t of tokens) {
-    // C#
     const cTok = canonicalizeCToken(t);
     if (cTok) {
       if (!seen.has(cTok)) { seen.add(cTok); ok.push(cTok); }
       continue;
     }
 
-    // legajo: solo dígitos
     const onlyDigits = t.replace(/\D/g, "");
-    if (!onlyDigits || onlyDigits.length > 4) {
-      bad.push(t);
-      continue;
-    }
+    if (!onlyDigits || onlyDigits.length > 4) { bad.push(t); continue; }
 
     const canon = canonicalizeLegajoDigits(onlyDigits);
-    if (!isValidLegajoCanon(canon)) {
-      bad.push(t);
-      continue;
-    }
+    if (!isValidLegajoCanon(canon)) { bad.push(t); continue; }
 
     if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
   }
@@ -160,13 +162,22 @@ function parseTokens(raw) {
   return { ok, bad };
 }
 
-function empresaCTotal(tokensOk) {
-  return tokensOk
-    .filter(x => /^C\d+$/.test(x))
-    .reduce((sum, x) => sum + Number(x.slice(1)), 0);
+function refreshPreview() {
+  const { ok, bad } = parseTokens(inputTokens.value);
+  preview.textContent =
+    `OK (${ok.length}): ${ok.join(", ")}\n` +
+    (bad.length ? `\nINVALIDOS (${bad.length}): ${bad.join(", ")}` : "");
 }
+inputTokens.addEventListener("input", refreshPreview);
 
-// ===== Legajos activos cache (validación "no existe") =====
+btnLimpiar.addEventListener("click", () => {
+  inputTokens.value = "";
+  refreshPreview();
+  setMsg(msgPublic, "", "");
+  inputTokens.focus();
+});
+
+// ===== Legajos activos cache (validación existencia) =====
 let legajosActivosSet = new Set();
 let legajosActivosLoadedAt = 0;
 
@@ -176,13 +187,9 @@ async function loadLegajosActivos({ force = false } = {}) {
     return legajosActivosSet;
   }
 
-  const q = query(
-    collection(db, "legajos_activos"),
-    where("activo", "==", true),
-    limit(5000)
-  );
-
+  const q = query(collection(db, "legajos_activos"), where("activo", "==", true), limit(5000));
   const snap = await getDocs(q);
+
   const s = new Set();
   snap.forEach((d) => {
     const id = d.id;
@@ -194,27 +201,7 @@ async function loadLegajosActivos({ force = false } = {}) {
   return legajosActivosSet;
 }
 
-// ===== Preview =====
-function refreshPreview() {
-  const { ok, bad } = parseTokens(inputTokens.value);
-  const cTot = empresaCTotal(ok);
-
-  preview.textContent =
-    `OK (${ok.length}): ${ok.join(", ")}\n` +
-    `Empresa C total: ${cTot}\n` +
-    (bad.length ? `\nINVALIDOS (${bad.length}): ${bad.join(", ")}` : "");
-}
-
-inputTokens.addEventListener("input", refreshPreview);
-
-btnLimpiar.addEventListener("click", () => {
-  inputTokens.value = "";
-  refreshPreview();
-  setMsg(msgPublic, "", "");
-  inputTokens.focus();
-});
-
-// ===== Guardar ingreso =====
+// ===== Guardar ingreso (1 doc por token) =====
 frmIngreso.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
@@ -226,31 +213,17 @@ frmIngreso.addEventListener("submit", async (e) => {
     const raw = inputTokens.value;
     const { ok, bad } = parseTokens(raw);
 
-    if (ok.length === 0) {
-      setMsg(msgPublic, "No hay legajos válidos.", "err");
-      return;
-    }
-    if (bad.length) {
-      setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
-      return;
-    }
-    if (ok.length > MAX_TOKENS_PER_SUBMIT) {
-      setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
-      return;
-    }
+    if (!ok.length) return setMsg(msgPublic, "No hay legajos válidos.", "err");
+    if (bad.length) return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
+    if (ok.length > MAX_TOKENS_PER_SUBMIT) return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
 
-    // Validación existencia legajos (no aplica a C# y no aplica al "0")
+    // validar existencia: solo números (no C#) y excepto 0
     const activos = await loadLegajosActivos();
-    const legajosNoExisten = ok.filter(t => /^[0-9]+$/.test(t) && t !== "0" && !activos.has(t));
-
-    if (legajosNoExisten.length) {
-      setMsg(msgPublic, `Estás ingresando legajos que no existen: ${legajosNoExisten.join(", ")}`, "err");
-      return;
-    }
+    const noExisten = ok.filter(t => /^[0-9]+$/.test(t) && t !== "0" && !activos.has(t));
+    if (noExisten.length) return setMsg(msgPublic, `Estás ingresando legajos que no existen: ${noExisten.join(", ")}`, "err");
 
     const uid = auth.currentUser?.uid || null;
 
-    // Guardamos 1 doc por token
     const writes = ok.map((t) => {
       const isC = /^C\d+$/.test(t);
       const cantidadC = isC ? Number(t.slice(1)) : 0;
@@ -273,7 +246,7 @@ frmIngreso.addEventListener("submit", async (e) => {
     inputTokens.focus();
   } catch (err) {
     console.error(err);
-    setMsg(msgPublic, "Error guardando. Revisá Rules / Auth.", "err");
+    setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
   } finally {
     btnIngreso.disabled = false;
   }
@@ -290,15 +263,13 @@ frmAdminLogin.addEventListener("submit", async (e) => {
     setMsg(msgAdmin, "OK. Logueado.", "ok");
   } catch (err) {
     console.error(err);
-    setMsg(msgAdmin, "Login falló. Revisá usuario/clave.", "err");
+    setMsg(msgAdmin, `Login falló:\n${formatErr(err)}`, "err");
   } finally {
     btnAdminLogin.disabled = false;
   }
 });
 
-btnAdminLogout.addEventListener("click", async () => {
-  await signOut(auth);
-});
+btnAdminLogout.addEventListener("click", async () => { await signOut(auth); });
 
 onAuthStateChanged(auth, async (user) => {
   const isPasswordUser = !!user?.providerData?.some(p => p.providerId === "password");
@@ -310,7 +281,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
-// ===== Export por mes =====
+// ===== Mes: preview + export =====
 setMesActual();
 
 function setMesActual() {
@@ -336,61 +307,133 @@ function formatFechaHoraMin(dateObj) {
   });
 }
 
-let lastMonthRows = [];
+function clearMonthTable() {
+  tblBody.innerHTML = "";
+  mesInfo.textContent = "";
+}
 
-async function cargarRegistrosDelMes(yyyyMm) {
+async function getMonthCount(start, end) {
+  const qCount = query(
+    collection(db, "registros_tokens"),
+    where("createdAt", ">=", start),
+    where("createdAt", "<", end)
+  );
+  const snap = await getCountFromServer(qCount);
+  return snap.data().count || 0;
+}
+
+async function loadMonthPreview(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
 
-  const q = query(
+  const total = await getMonthCount(start, end);
+
+  const qPrev = query(
     collection(db, "registros_tokens"),
     where("createdAt", ">=", start),
     where("createdAt", "<", end),
     orderBy("createdAt", "asc"),
-    limit(20000)
+    limit(PREVIEW_LIMIT)
   );
 
-  const snap = await getDocs(q);
-  const rows = [];
+  const snap = await getDocs(qPrev);
 
+  const rows = [];
   snap.forEach((docu) => {
     const d = docu.data();
     const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
-    const fecha = createdAt ? formatFechaHoraMin(createdAt) : "";
     rows.push({
-      FechaHora: fecha,
+      FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
       Legajo: d.token ?? ""
     });
   });
 
-  return rows;
+  return { total, rows };
 }
 
 btnCargarMes.addEventListener("click", async () => {
   setMsg(msgAdmin, "", "");
-  tblBody.innerHTML = "";
-  lastMonthRows = [];
+  clearMonthTable();
 
   try {
     const yyyyMm = mesInput.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    lastMonthRows = await cargarRegistrosDelMes(yyyyMm);
+    btnCargarMes.disabled = true;
 
-    for (const r of lastMonthRows) {
+    const { total, rows } = await loadMonthPreview(yyyyMm);
+
+    mesInfo.textContent =
+      `Total del mes: ${total}. Mostrando vista previa: ${Math.min(PREVIEW_LIMIT, total)}.`;
+
+    for (const r of rows) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(r.FechaHora)}</td>
-        <td>${escapeHtml(r.Legajo)}</td>
-      `;
+      tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
       tblBody.appendChild(tr);
     }
 
-    setMsg(msgAdmin, `Cargados ${lastMonthRows.length} registros del mes ${yyyyMm}.`, "ok");
+    setMsg(msgAdmin, "OK.", "ok");
   } catch (err) {
     console.error(err);
-    setMsg(msgAdmin, "No pude cargar el mes. (Puede requerir índice).", "err");
+    setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
+  } finally {
+    btnCargarMes.disabled = false;
   }
 });
+
+async function exportMonthToExcel(yyyyMm) {
+  const { start, end } = getMonthRange(yyyyMm);
+
+  // paginado para export: evita cargar todo de golpe / y evita “llenar la página”
+  let allRows = [];
+  let lastDoc = null;
+  let fetched = 0;
+
+  while (true) {
+    const base = [
+      collection(db, "registros_tokens"),
+      where("createdAt", ">=", start),
+      where("createdAt", "<", end),
+      orderBy("createdAt", "asc"),
+      limit(EXPORT_PAGE_SIZE)
+    ];
+
+    const qPage = lastDoc
+      ? query(...base, startAfter(lastDoc))
+      : query(...base);
+
+    const snap = await getDocs(qPage);
+    if (snap.empty) break;
+
+    snap.forEach((docu) => {
+      const d = docu.data();
+      const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
+      allRows.push({
+        FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
+        Legajo: d.token ?? ""
+      });
+    });
+
+    fetched += snap.size;
+    lastDoc = snap.docs[snap.docs.length - 1];
+
+    // feedback en pantalla
+    mesInfo.textContent = `Exportando... ${fetched} filas leídas`;
+    if (snap.size < EXPORT_PAGE_SIZE) break;
+  }
+
+  if (!allRows.length) return { filename: null, rows: 0 };
+
+  const ws = XLSX.utils.json_to_sheet(allRows, { header: ["FechaHora", "Legajo"] });
+  ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Registros");
+
+  const filename = `control_colectivos_${yyyyMm}.xlsx`;
+  XLSX.writeFile(wb, filename, { compression: true });
+
+  return { filename, rows: allRows.length };
+}
 
 btnExportarMes.addEventListener("click", async () => {
   setMsg(msgAdmin, "", "");
@@ -399,28 +442,100 @@ btnExportarMes.addEventListener("click", async () => {
     const yyyyMm = mesInput.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    if (!lastMonthRows.length) {
-      lastMonthRows = await cargarRegistrosDelMes(yyyyMm);
-    }
-    if (!lastMonthRows.length) return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
+    btnExportarMes.disabled = true;
+    mesInfo.textContent = "Preparando exportación...";
 
-    const ws = XLSX.utils.json_to_sheet(lastMonthRows, { header: ["FechaHora", "Legajo"] });
-    ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
+    const res = await exportMonthToExcel(yyyyMm);
+    if (!res.filename) return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Registros");
-
-    const filename = `control_colectivos_${yyyyMm}.xlsx`;
-    XLSX.writeFile(wb, filename, { compression: true });
-
-    setMsg(msgAdmin, `Exportado: ${filename} (${lastMonthRows.length} filas)`, "ok");
+    mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
+    setMsg(msgAdmin, "OK.", "ok");
   } catch (err) {
     console.error(err);
-    setMsg(msgAdmin, "Error exportando (puede requerir índice).", "err");
+
+    // Si es “failed-precondition” muchas veces incluye URL para crear índice
+    const msg = formatErr(err);
+    setMsg(msgAdmin, `Error exportando:\n${msg}`, "err");
+  } finally {
+    btnExportarMes.disabled = false;
   }
 });
 
-// ===== ABM Legajos =====
+// ===== ABM Legajos (buscador + paginación) =====
+let legajosCache = [];
+let pageIndex = 0;
+
+function renderLegajos() {
+  const qText = String(buscarLegajo?.value || "").trim().toLowerCase();
+
+  let filtered = legajosCache;
+  if (qText) {
+    filtered = legajosCache.filter(x =>
+      String(x.leg).includes(qText) ||
+      String(x.nombre || "").toLowerCase().includes(qText)
+    );
+  }
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / LEGAJOS_PAGE_SIZE));
+
+  if (pageIndex >= totalPages) pageIndex = totalPages - 1;
+  if (pageIndex < 0) pageIndex = 0;
+
+  const start = pageIndex * LEGAJOS_PAGE_SIZE;
+  const slice = filtered.slice(start, start + LEGAJOS_PAGE_SIZE);
+
+  legajosPager.textContent = total
+    ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${pageIndex + 1}/${totalPages})`
+    : `Sin resultados`;
+
+  btnPrevLegajos.disabled = (pageIndex === 0);
+  btnNextLegajos.disabled = (pageIndex >= totalPages - 1);
+
+  tblLegajosBody.innerHTML = "";
+
+  for (const x of slice) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(x.leg)}</td>
+      <td>${escapeHtml(x.nombre || "")}</td>
+      <td>${x.activo ? "Sí" : "No"}</td>
+      <td>
+        <button data-leg="${escapeHtml(x.leg)}" class="secondary btnToggleActivo">
+          ${x.activo ? "Desactivar" : "Activar"}
+        </button>
+      </td>
+    `;
+    tblLegajosBody.appendChild(tr);
+  }
+
+  tblLegajosBody.querySelectorAll(".btnToggleActivo").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const leg = btn.getAttribute("data-leg");
+      if (!leg) return;
+
+      try {
+        const current = legajosCache.find(x => x.leg === leg);
+        const nextActivo = !(current?.activo);
+
+        await updateDoc(doc(db, "legajos_activos", leg), {
+          activo: nextActivo,
+          updatedAt: serverTimestamp()
+        });
+
+        if (current) current.activo = nextActivo;
+        await loadLegajosActivos({ force: true });
+
+        setMsg(msgLegajos, `OK. Legajo ${leg} ${nextActivo ? "activado" : "desactivado"}.`, "ok");
+        renderLegajos();
+      } catch (err) {
+        console.error(err);
+        setMsg(msgLegajos, `No pude actualizar:\n${formatErr(err)}`, "err");
+      }
+    });
+  });
+}
+
 function canonLegajoFromInput(v) {
   const onlyDigits = String(v || "").replace(/\D/g, "");
   if (!onlyDigits || onlyDigits.length > 4) return null;
@@ -446,103 +561,68 @@ btnAgregarLegajo.addEventListener("click", async () => {
     }, { merge: true });
 
     await loadLegajosActivos({ force: true });
-
     setMsg(msgLegajos, `OK. Legajo ${canon} activado.`, "ok");
+
     nuevoLegajo.value = "";
     nombreLegajo.value = "";
   } catch (err) {
     console.error(err);
-    setMsg(msgLegajos, "Error agregando/activando legajo (revisá Rules admin).", "err");
+    setMsg(msgLegajos, `Error:\n${formatErr(err)}`, "err");
   }
 });
 
 btnCargarLegajos.addEventListener("click", async () => {
   setMsg(msgLegajos, "", "");
   tblLegajosBody.innerHTML = "";
+  legajosCache = [];
+  pageIndex = 0;
 
   try {
-    const q = query(collection(db, "legajos_activos"), orderBy("activo", "desc"), limit(5000));
-    const snap = await getDocs(q);
+    const qLeg = query(collection(db, "legajos_activos"), orderBy("activo", "desc"), limit(5000));
+    const snap = await getDocs(qLeg);
 
     snap.forEach((d) => {
       const data = d.data();
-      const leg = d.id;
-      const nombre = data.nombre ?? "";
-      const activo = !!data.activo;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(leg)}</td>
-        <td>${escapeHtml(nombre)}</td>
-        <td>${activo ? "Sí" : "No"}</td>
-        <td>
-          <button data-leg="${escapeHtml(leg)}" class="secondary btnDesactivar">Desactivar</button>
-        </td>
-      `;
-      tblLegajosBody.appendChild(tr);
-    });
-
-    tblLegajosBody.querySelectorAll(".btnDesactivar").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const leg = btn.getAttribute("data-leg");
-        if (!leg) return;
-
-        try {
-          await updateDoc(doc(db, "legajos_activos", leg), {
-            activo: false,
-            updatedAt: serverTimestamp()
-          });
-
-          await loadLegajosActivos({ force: true });
-          setMsg(msgLegajos, `OK. Legajo ${leg} desactivado.`, "ok");
-          btnCargarLegajos.click();
-        } catch (err) {
-          console.error(err);
-          setMsg(msgLegajos, "No pude desactivar (revisá Rules admin).", "err");
-        }
+      legajosCache.push({
+        leg: d.id,
+        nombre: data.nombre ?? "",
+        activo: !!data.activo
       });
     });
 
+    renderLegajos();
     setMsg(msgLegajos, "Listado cargado.", "ok");
   } catch (err) {
     console.error(err);
-    setMsg(msgLegajos, "Error cargando legajos (revisá Rules admin).", "err");
+    setMsg(msgLegajos, `Error cargando:\n${formatErr(err)}`, "err");
   }
 });
 
-// ===== Importación masiva (10 clicks) =====
+buscarLegajo.addEventListener("input", () => { pageIndex = 0; renderLegajos(); });
+btnPrevLegajos.addEventListener("click", () => { pageIndex--; renderLegajos(); });
+btnNextLegajos.addEventListener("click", () => { pageIndex++; renderLegajos(); });
+
+// ===== Importación masiva (10 clics, sin mensajes “faltan X”) =====
 let unlockClicks = 0;
 let importUnlocked = false;
 
-btnUnlockImport?.addEventListener("click", () => {
+btnUnlockImport.addEventListener("click", () => {
   unlockClicks++;
-  const remaining = Math.max(0, 10 - unlockClicks);
-
-  if (remaining > 0) {
-    importHint.textContent = `Faltan ${remaining} clics...`;
-    return;
+  if (unlockClicks >= 10) {
+    importUnlocked = true;
+    importBox.style.display = "block";
   }
-
-  importUnlocked = true;
-  importBox.style.display = "block";
-  importHint.textContent = "Importación habilitada.";
-  setMsg(msgImport, "", "");
 });
 
-btnCancelarImport?.addEventListener("click", () => {
+btnCancelarImport.addEventListener("click", () => {
   importUnlocked = false;
   unlockClicks = 0;
   importBox.style.display = "none";
-  importHint.textContent = "";
   bulkLegajos.value = "";
   setMsg(msgImport, "", "");
 });
 
 function parseLegajosFromBulk(text) {
-  // Acepta copiar/pegar desde Excel:
-  // - saltos de línea
-  // - tabs
-  // - múltiples columnas si pegás mal: igual extrae números
   const parts = String(text || "")
     .split(/[,\s;\t\r\n]+/g)
     .map(s => s.trim())
@@ -559,7 +639,6 @@ function parseLegajosFromBulk(text) {
     if (!isValidLegajoCanon(canon)) { invalid.push(p); continue; }
     if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
   }
-
   return { ok, invalid };
 }
 
@@ -569,63 +648,55 @@ function requireAdminOrThrow() {
   if (!u || !isPasswordUser) throw new Error("Solo admin logueado puede importar.");
 }
 
-btnImportarLegajos?.addEventListener("click", async () => {
+btnImportarLegajos.addEventListener("click", async () => {
   setMsg(msgImport, "", "");
 
   try {
     requireAdminOrThrow();
-    if (!importUnlocked) return setMsg(msgImport, "Importación bloqueada.", "err");
+    if (!importUnlocked) return;
 
     const { ok, invalid } = parseLegajosFromBulk(bulkLegajos.value);
+    if (!ok.length) return setMsg(msgImport, "No encontré legajos válidos.", "err");
 
-    if (!ok.length) return setMsg(msgImport, "No encontré legajos válidos para importar.", "err");
-
-    if (!confirm(`Se importarán/activarán ${ok.length} legajos. ¿Continuar?`)) return;
+    if (!confirm(`Se activarán ${ok.length} legajos. ¿Continuar?`)) return;
 
     btnImportarLegajos.disabled = true;
 
     let imported = 0;
-    let batches = 0;
-
     for (let i = 0; i < ok.length; i += 450) {
       const slice = ok.slice(i, i + 450);
       const batch = writeBatch(db);
 
       for (const leg of slice) {
-        // si querés NO administrar 0, lo saltás
         if (leg === "0") continue;
-
+        // NO pisa nombre (solo activa)
         batch.set(doc(db, "legajos_activos", leg), {
           activo: true,
-          nombre: "",
           updatedAt: serverTimestamp()
         }, { merge: true });
-
         imported++;
       }
 
       await batch.commit();
-      batches++;
     }
 
     await loadLegajosActivos({ force: true });
 
     setMsg(
       msgImport,
-      `OK. Importados/activados: ${imported}. Batches: ${batches}.` +
-      (invalid.length ? ` (Inválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""})` : ""),
+      `OK importados/activados: ${imported}` +
+      (invalid.length ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}` : ""),
       "ok"
     );
 
-    // bloquear de nuevo (solo una vez)
+    // bloquea de nuevo
     importUnlocked = false;
     unlockClicks = 0;
     importBox.style.display = "none";
-    importHint.textContent = "Importación realizada y bloqueada nuevamente.";
     bulkLegajos.value = "";
   } catch (err) {
     console.error(err);
-    setMsg(msgImport, String(err?.message || err), "err");
+    setMsg(msgImport, `Error:\n${formatErr(err)}`, "err");
   } finally {
     btnImportarLegajos.disabled = false;
   }
