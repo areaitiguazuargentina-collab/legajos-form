@@ -26,7 +26,7 @@
           </div>
         </div>
 
-        <div class="row mt-20 btn-container">
+        <div class="row mt-30 btn-container">
           <button id="btnIngreso" type="submit" class="btn-primary">Enviar Registro</button>
           <button id="btnLimpiar" type="button" class="btn-secondary">Limpiar</button>
         </div>
@@ -57,30 +57,13 @@
           <input id="adminPass" type="password" placeholder="••••••••" required />
         </div>
 
-        <div class="row mt-20 btn-container" style="grid-column: span 2;">
+        <div class="row mt-30 btn-container" style="grid-column: span 2;">
           <button id="btnAdminLogin" type="submit" class="btn-accent">Entrar al Panel</button>
           <button id="btnAdminLogout" type="button" class="btn-danger" style="display:none;">Cerrar Sesión</button>
         </div>
 
         <div id="msgAdmin" class="msg" aria-live="polite"></div>
       </form>
-    </section>
-
-    <section id="adminPanelSection" class="content-section admin-panel" style="display:none;">
-      <div class="section-header-admin">
-        <h2>📊 Panel de Control</h2>
-      </div>
-
-      <div class="admin-card">
-        <h3>Descargar Reportes</h3>
-        <label for="mes">Seleccionar Mes</label>
-        <div class="row wrap mt-10">
-          <input id="mes" type="month" class="input-inline" style="flex: 1;" />
-          <button id="btnCargarMes" type="button" class="btn-secondary">Vista Previa</button>
-          <button id="btnExportarMes" type="button" class="btn-success">Exportar Excel</button>
-        </div>
-        <div id="mesInfo" class="status-text"></div>
-      </div>
     </section>
   </main>
 
