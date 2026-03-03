@@ -23,7 +23,8 @@ body {
   background-color: var(--bg);
   background-image: radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%);
   color: var(--text);
-  font-family: system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
 }
 
 main.card {
@@ -43,10 +44,11 @@ main.card {
 
 .section-title h2 { font-size: 20px; color: var(--accent); margin-bottom: 20px; }
 
-/* Separación del Label */
+.field { margin-bottom: 15px; }
+
 label {
   display: block;
-  margin-bottom: 12px; /* Más espacio bajo el label */
+  margin-bottom: 12px;
   font-size: 14px;
   color: var(--muted);
 }
@@ -58,25 +60,42 @@ input {
   border-radius: var(--radius-md);
   padding: 15px;
   color: #fff;
+  font-size: 15px;
 }
 
-/* CONTENEDOR DE BOTONES SEPARADOS */
-.btn-container {
+input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+}
+
+/* Contenedor de botones con espacio horizontal y vertical */
+.row {
   display: flex;
-  justify-content: space-between; /* ESTO LOS SEPARA A LOS EXTREMOS */
   gap: 20px;
+  align-items: center;
 }
 
-.mt-30 { margin-top: 30px; } /* Más espacio arriba de los botones */
+.btn-container {
+  justify-content: space-between; /* Separa los botones a los extremos */
+}
+
+/* Utilidad para dar aire respecto al input de arriba */
+.mt-30 { margin-top: 30px; }
 
 button {
-  flex: 1; /* Hace que crezcan parejos */
+  flex: 1; /* Hace que los botones ocupen espacio equitativo */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 14px 20px;
   border-radius: var(--radius-md);
   border: none;
   font-weight: 600;
+  font-size: 14px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .btn-primary { background: var(--accent); color: #fff; }
@@ -84,10 +103,17 @@ button {
 .btn-accent { background: #6366f1; color: #fff; }
 .btn-danger { background: var(--err); color: #fff; }
 
+button:hover { filter: brightness(1.2); transform: translateY(-1px); }
+button:active { transform: translateY(0); }
+
+/* Estructuras generales */
 .sep { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
+.msg { margin-top: 20px; padding: 12px; border-radius: 8px; font-size: 14px; }
+
 @media (max-width: 640px) {
-  .btn-container { flex-direction: column; }
-  .btn-secondary { max-width: 100%; }
+  .form-grid { grid-template-columns: 1fr; }
+  .row { flex-direction: column; gap: 15px; }
+  button { width: 100%; max-width: 100% !important; }
 }
