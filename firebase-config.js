@@ -1,7 +1,7 @@
 // firebase-config.js
 window.FIREBASE_CONFIG = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  appId: "TU_APP_ID"
+  apiKey: "AIzaSyALZQJ4I2y5Pl9umPtsFSaOMCUwytEFKkQ",
+  authDomain: "control-riouruguay.firebaseapp.com",
+  projectId: "control-riouruguay",
+  appId: "1:757216963566:web:1125313d0e2e15b1137cff"
 };
