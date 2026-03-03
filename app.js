@@ -1,9 +1,19 @@
+// app.js (COMPLETO corregido)
+// ✅ Cambios clave:
+// 1) createdAt usa Timestamp.now() (evita fallos con rules "is timestamp")
+// 2) El público NO lee legajos_activos (no rompe si rules bloquean lectura)
+//    -> La validación “legajo existe” la hace Firestore Rules con exists()
+//    -> Si falla, mostramos mensaje claro.
+// 3) Normaliza C/c a "C#" (ya lo hacías)
+// 4) Admin sigue pudiendo ABM + listar + exportar
+// 5) Si no hay datos en el mes, muestra "No hay datos" y no queda colgado
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getFirestore,
   addDoc,
   collection,
-  serverTimestamp,
+  Timestamp, // ✅ IMPORTANTE
   query,
   where,
   orderBy,
@@ -14,14 +24,14 @@ import {
   updateDoc,
   writeBatch,
   getCountFromServer,
-  startAfter
+  startAfter,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getAuth,
   signInAnonymously,
   signInWithEmailAndPassword,
   onAuthStateChanged,
-  signOut
+  signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
 const MAX_INPUT_LEN = 300;
@@ -35,6 +45,7 @@ const LEGAJOS_PAGE_SIZE = 5;
 
 const $ = (id) => document.getElementById(id);
 
+// ===== DOM =====
 const frmIngreso = $("frmIngreso");
 const inputTokens = $("tokens");
 const btnIngreso = $("btnIngreso");
@@ -54,14 +65,14 @@ const mesInput = $("mes");
 const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
 const mesInfo = $("mesInfo");
-const tblBody = $("tbl").querySelector("tbody");
+const tblBody = $("tbl")?.querySelector("tbody");
 
 const nuevoLegajo = $("nuevoLegajo");
 const nombreLegajo = $("nombreLegajo");
 const btnAgregarLegajo = $("btnAgregarLegajo");
 const btnCargarLegajos = $("btnCargarLegajos");
 const msgLegajos = $("msgLegajos");
-const tblLegajosBody = $("tblLegajos").querySelector("tbody");
+const tblLegajosBody = $("tblLegajos")?.querySelector("tbody");
 const buscarLegajo = $("buscarLegajo");
 const btnPrevLegajos = $("btnPrevLegajos");
 const btnNextLegajos = $("btnNextLegajos");
@@ -74,6 +85,7 @@ const btnImportarLegajos = $("btnImportarLegajos");
 const btnCancelarImport = $("btnCancelarImport");
 const msgImport = $("msgImport");
 
+// ===== Helpers UI =====
 function setMsg(el, text, type) {
   if (!el) return;
   el.textContent = text || "";
@@ -95,10 +107,10 @@ function formatErr(err) {
   return `${code}${msg}`;
 }
 
-// Firebase init
+// ===== Firebase init =====
 if (!window.FIREBASE_CONFIG) {
   setMsg(msgPublic, "Falta firebase-config.js (window.FIREBASE_CONFIG).", "err");
-  btnIngreso.disabled = true;
+  if (btnIngreso) btnIngreso.disabled = true;
   throw new Error("Missing FIREBASE_CONFIG");
 }
 const app = initializeApp(window.FIREBASE_CONFIG);
@@ -109,7 +121,7 @@ async function ensureAnon() {
   if (!auth.currentUser) await signInAnonymously(auth);
 }
 
-// ===== Parse / Validación =====
+// ===== Parse / Validación tokens =====
 const RE_CTOKEN = /^C([1-9]\d{0,1})$/i;
 
 function canonicalizeLegajoDigits(d) {
@@ -122,7 +134,7 @@ function canonicalizeCToken(tok) {
   if (!m) return null;
   const n = Number(m[1]);
   if (!Number.isInteger(n) || n < MIN_C || n > MAX_C) return null;
-  return `C${n}`;
+  return `C${n}`; // ✅ siempre mayúscula
 }
 
 function isValidLegajoCanon(canon) {
@@ -136,7 +148,7 @@ function parseTokens(raw) {
   const tokens = String(raw || "")
     .slice(0, MAX_INPUT_LEN)
     .split(/[,\s;\t\r\n]+/g)
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean);
 
   const seen = new Set();
@@ -144,92 +156,84 @@ function parseTokens(raw) {
   const bad = [];
 
   for (const t of tokens) {
+    // C#
     const cTok = canonicalizeCToken(t);
     if (cTok) {
-      if (!seen.has(cTok)) { seen.add(cTok); ok.push(cTok); }
+      if (!seen.has(cTok)) {
+        seen.add(cTok);
+        ok.push(cTok);
+      }
       continue;
     }
 
+    // Legajo numérico (solo dígitos)
     const onlyDigits = t.replace(/\D/g, "");
-    if (!onlyDigits || onlyDigits.length > 4) { bad.push(t); continue; }
+    if (!onlyDigits || onlyDigits.length > 4) {
+      bad.push(t);
+      continue;
+    }
 
     const canon = canonicalizeLegajoDigits(onlyDigits);
-    if (!isValidLegajoCanon(canon)) { bad.push(t); continue; }
+    if (!isValidLegajoCanon(canon)) {
+      bad.push(t);
+      continue;
+    }
 
-    if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      ok.push(canon);
+    }
   }
 
   return { ok, bad };
 }
 
 function refreshPreview() {
-  const { ok, bad } = parseTokens(inputTokens.value);
+  if (!preview) return;
+  const { ok, bad } = parseTokens(inputTokens?.value);
   preview.textContent =
     `OK (${ok.length}): ${ok.join(", ")}\n` +
     (bad.length ? `\nINVALIDOS (${bad.length}): ${bad.join(", ")}` : "");
 }
-inputTokens.addEventListener("input", refreshPreview);
 
-btnLimpiar.addEventListener("click", () => {
+inputTokens?.addEventListener("input", refreshPreview);
+
+btnLimpiar?.addEventListener("click", () => {
+  if (!inputTokens) return;
   inputTokens.value = "";
   refreshPreview();
   setMsg(msgPublic, "", "");
   inputTokens.focus();
 });
 
-// ===== Legajos activos cache (validación existencia) =====
-let legajosActivosSet = new Set();
-let legajosActivosLoadedAt = 0;
-
-async function loadLegajosActivos({ force = false } = {}) {
-  const now = Date.now();
-  if (!force && now - legajosActivosLoadedAt < 2 * 60 * 1000 && legajosActivosSet.size > 0) {
-    return legajosActivosSet;
-  }
-
-  const q = query(collection(db, "legajos_activos"), where("activo", "==", true), limit(5000));
-  const snap = await getDocs(q);
-
-  const s = new Set();
-  snap.forEach((d) => {
-    const id = d.id;
-    if (isValidLegajoCanon(id)) s.add(id);
-  });
-
-  legajosActivosSet = s;
-  legajosActivosLoadedAt = now;
-  return legajosActivosSet;
-}
-
 // ===== Guardar ingreso (1 doc por token) =====
-frmIngreso.addEventListener("submit", async (e) => {
+frmIngreso?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgPublic, "", "");
-  btnIngreso.disabled = true;
+  if (btnIngreso) btnIngreso.disabled = true;
 
   try {
     await ensureAnon();
 
-    const raw = inputTokens.value;
+    const raw = inputTokens?.value || "";
     const { ok, bad } = parseTokens(raw);
 
     if (!ok.length) return setMsg(msgPublic, "No hay legajos válidos.", "err");
     if (bad.length) return setMsg(msgPublic, `Tokens inválidos: ${bad.join(", ")}`, "err");
-    if (ok.length > MAX_TOKENS_PER_SUBMIT) return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
+    if (ok.length > MAX_TOKENS_PER_SUBMIT)
+      return setMsg(msgPublic, `Máximo ${MAX_TOKENS_PER_SUBMIT} tokens por envío.`, "err");
 
-    // validar existencia: solo números (no C#) y excepto 0
-    const activos = await loadLegajosActivos();
-    const noExisten = ok.filter(t => /^[0-9]+$/.test(t) && t !== "0" && !activos.has(t));
-    if (noExisten.length) return setMsg(msgPublic, `Estás ingresando legajos que no existen: ${noExisten.join(", ")}`, "err");
-
-    const uid = auth.currentUser?.uid || null;
+    // ✅ IMPORTANTE:
+    // NO validamos existencia desde el cliente (porque legajos_activos suele estar bloqueado al público).
+    // La existencia/activo lo valida Firestore Rules con exists()/get().
+    const uid = auth.currentUser?.uid || "anon";
 
     const writes = ok.map((t) => {
       const isC = /^C\d+$/.test(t);
       const cantidadC = isC ? Number(t.slice(1)) : 0;
 
       return addDoc(collection(db, "registros_tokens"), {
-        createdAt: serverTimestamp(),
+        createdAt: Timestamp.now(), // ✅ (evita fallo con serverTimestamp en rules)
         token: t,
         tipo: isC ? "C" : "LEGAJO",
         cantidadC,
@@ -241,43 +245,59 @@ frmIngreso.addEventListener("submit", async (e) => {
     await Promise.all(writes);
 
     setMsg(msgPublic, `OK guardado (${ok.length}).`, "ok");
-    inputTokens.value = "";
-    refreshPreview();
-    inputTokens.focus();
+    if (inputTokens) {
+      inputTokens.value = "";
+      refreshPreview();
+      inputTokens.focus();
+    }
   } catch (err) {
     console.error(err);
-    setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
+
+    // Mensaje más claro para el usuario público
+    if (err?.code === "permission-denied") {
+      setMsg(
+        msgPublic,
+        "No permitido: puede ser legajo inexistente/no activo o token inválido.",
+        "err"
+      );
+    } else {
+      setMsg(msgPublic, `Error guardando:\n${formatErr(err)}`, "err");
+    }
   } finally {
-    btnIngreso.disabled = false;
+    if (btnIngreso) btnIngreso.disabled = false;
   }
 });
 
 // ===== Admin Auth =====
-frmAdminLogin.addEventListener("submit", async (e) => {
+frmAdminLogin?.addEventListener("submit", async (e) => {
   e.preventDefault();
   setMsg(msgAdmin, "", "");
 
   try {
-    btnAdminLogin.disabled = true;
+    if (btnAdminLogin) btnAdminLogin.disabled = true;
     await signInWithEmailAndPassword(auth, adminEmail.value.trim(), adminPass.value);
     setMsg(msgAdmin, "OK. Logueado.", "ok");
   } catch (err) {
     console.error(err);
     setMsg(msgAdmin, `Login falló:\n${formatErr(err)}`, "err");
   } finally {
-    btnAdminLogin.disabled = false;
+    if (btnAdminLogin) btnAdminLogin.disabled = false;
   }
 });
 
-btnAdminLogout.addEventListener("click", async () => { await signOut(auth); });
+btnAdminLogout?.addEventListener("click", async () => {
+  await signOut(auth);
+});
 
 onAuthStateChanged(auth, async (user) => {
-  const isPasswordUser = !!user?.providerData?.some(p => p.providerId === "password");
-  adminPanelSection.style.display = isPasswordUser ? "block" : "none";
-  btnAdminLogout.style.display = user ? "inline-block" : "none";
+  const isPasswordUser = !!user?.providerData?.some((p) => p.providerId === "password");
+  if (adminPanelSection) adminPanelSection.style.display = isPasswordUser ? "block" : "none";
+  if (btnAdminLogout) btnAdminLogout.style.display = user ? "inline-block" : "none";
 
   if (!user) {
-    try { await ensureAnon(); } catch {}
+    try {
+      await ensureAnon();
+    } catch {}
   }
 });
 
@@ -285,6 +305,7 @@ onAuthStateChanged(auth, async (user) => {
 setMesActual();
 
 function setMesActual() {
+  if (!mesInput) return;
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   mesInput.value = `${d.getFullYear()}-${mm}`;
@@ -303,13 +324,13 @@ function formatFechaHoraMin(dateObj) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
 function clearMonthTable() {
-  tblBody.innerHTML = "";
-  mesInfo.textContent = "";
+  if (tblBody) tblBody.innerHTML = "";
+  if (mesInfo) mesInfo.textContent = "";
 }
 
 async function getMonthCount(start, end) {
@@ -324,7 +345,6 @@ async function getMonthCount(start, end) {
 
 async function loadMonthPreview(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
-
   const total = await getMonthCount(start, end);
 
   const qPrev = query(
@@ -343,32 +363,38 @@ async function loadMonthPreview(yyyyMm) {
     const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
     rows.push({
       FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
-      Legajo: d.token ?? ""
+      Legajo: d.token ?? "",
     });
   });
 
   return { total, rows };
 }
 
-btnCargarMes.addEventListener("click", async () => {
+btnCargarMes?.addEventListener("click", async () => {
   setMsg(msgAdmin, "", "");
   clearMonthTable();
 
   try {
-    const yyyyMm = mesInput.value;
+    const yyyyMm = mesInput?.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    btnCargarMes.disabled = true;
+    if (btnCargarMes) btnCargarMes.disabled = true;
 
     const { total, rows } = await loadMonthPreview(yyyyMm);
 
-    mesInfo.textContent =
-      `Total del mes: ${total}. Mostrando vista previa: ${Math.min(PREVIEW_LIMIT, total)}.`;
+    if (mesInfo) {
+      mesInfo.textContent = `Total del mes: ${total}. Mostrando vista previa: ${Math.min(
+        PREVIEW_LIMIT,
+        total
+      )}.`;
+    }
 
-    for (const r of rows) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
-      tblBody.appendChild(tr);
+    if (tblBody) {
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
+        tblBody.appendChild(tr);
+      }
     }
 
     setMsg(msgAdmin, "OK.", "ok");
@@ -376,14 +402,13 @@ btnCargarMes.addEventListener("click", async () => {
     console.error(err);
     setMsg(msgAdmin, `Error cargando mes:\n${formatErr(err)}`, "err");
   } finally {
-    btnCargarMes.disabled = false;
+    if (btnCargarMes) btnCargarMes.disabled = false;
   }
 });
 
 async function exportMonthToExcel(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
 
-  // paginado para export: evita cargar todo de golpe / y evita “llenar la página”
   let allRows = [];
   let lastDoc = null;
   let fetched = 0;
@@ -394,12 +419,10 @@ async function exportMonthToExcel(yyyyMm) {
       where("createdAt", ">=", start),
       where("createdAt", "<", end),
       orderBy("createdAt", "asc"),
-      limit(EXPORT_PAGE_SIZE)
+      limit(EXPORT_PAGE_SIZE),
     ];
 
-    const qPage = lastDoc
-      ? query(...base, startAfter(lastDoc))
-      : query(...base);
+    const qPage = lastDoc ? query(...base, startAfter(lastDoc)) : query(...base);
 
     const snap = await getDocs(qPage);
     if (snap.empty) break;
@@ -409,15 +432,14 @@ async function exportMonthToExcel(yyyyMm) {
       const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
       allRows.push({
         FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
-        Legajo: d.token ?? ""
+        Legajo: d.token ?? "",
       });
     });
 
     fetched += snap.size;
     lastDoc = snap.docs[snap.docs.length - 1];
 
-    // feedback en pantalla
-    mesInfo.textContent = `Exportando... ${fetched} filas leídas`;
+    if (mesInfo) mesInfo.textContent = `Exportando... ${fetched} filas leídas`;
     if (snap.size < EXPORT_PAGE_SIZE) break;
   }
 
@@ -435,43 +457,42 @@ async function exportMonthToExcel(yyyyMm) {
   return { filename, rows: allRows.length };
 }
 
-btnExportarMes.addEventListener("click", async () => {
+btnExportarMes?.addEventListener("click", async () => {
   setMsg(msgAdmin, "", "");
 
   try {
-    const yyyyMm = mesInput.value;
+    const yyyyMm = mesInput?.value;
     if (!yyyyMm) return setMsg(msgAdmin, "Elegí un mes.", "err");
 
-    btnExportarMes.disabled = true;
-    mesInfo.textContent = "Preparando exportación...";
+    if (btnExportarMes) btnExportarMes.disabled = true;
+    if (mesInfo) mesInfo.textContent = "Preparando exportación...";
 
-    // ✅ Chequeo rápido: si el mes no tiene registros, no exporta y no queda “colgado”
+    // ✅ chequeo rápido
     const { start, end } = getMonthRange(yyyyMm);
     const total = await getMonthCount(start, end);
 
     if (!total || total === 0) {
-      mesInfo.textContent = "";
+      if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
 
-    // Si hay datos, exporta
-    mesInfo.textContent = `Exportando... (total estimado: ${total})`;
+    if (mesInfo) mesInfo.textContent = `Exportando... (total estimado: ${total})`;
 
     const res = await exportMonthToExcel(yyyyMm);
 
     if (!res.filename || res.rows === 0) {
-      mesInfo.textContent = "";
+      if (mesInfo) mesInfo.textContent = "";
       return setMsg(msgAdmin, "No hay datos para ese mes.", "err");
     }
 
-    mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
+    if (mesInfo) mesInfo.textContent = `Exportado: ${res.filename} (${res.rows} filas)`;
     setMsg(msgAdmin, "OK.", "ok");
   } catch (err) {
     console.error(err);
-    mesInfo.textContent = "";
+    if (mesInfo) mesInfo.textContent = "";
     setMsg(msgAdmin, `Error exportando:\n${formatErr(err)}`, "err");
   } finally {
-    btnExportarMes.disabled = false;
+    if (btnExportarMes) btnExportarMes.disabled = false;
   }
 });
 
@@ -480,13 +501,14 @@ let legajosCache = [];
 let pageIndex = 0;
 
 function renderLegajos() {
+  if (!tblLegajosBody) return;
+
   const qText = String(buscarLegajo?.value || "").trim().toLowerCase();
 
   let filtered = legajosCache;
   if (qText) {
-    filtered = legajosCache.filter(x =>
-      String(x.leg).includes(qText) ||
-      String(x.nombre || "").toLowerCase().includes(qText)
+    filtered = legajosCache.filter(
+      (x) => String(x.leg).includes(qText) || String(x.nombre || "").toLowerCase().includes(qText)
     );
   }
 
@@ -499,12 +521,16 @@ function renderLegajos() {
   const start = pageIndex * LEGAJOS_PAGE_SIZE;
   const slice = filtered.slice(start, start + LEGAJOS_PAGE_SIZE);
 
-  legajosPager.textContent = total
-    ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${pageIndex + 1}/${totalPages})`
-    : `Sin resultados`;
+  if (legajosPager) {
+    legajosPager.textContent = total
+      ? `Mostrando ${start + 1}-${Math.min(start + LEGAJOS_PAGE_SIZE, total)} de ${total} (página ${
+          pageIndex + 1
+        }/${totalPages})`
+      : `Sin resultados`;
+  }
 
-  btnPrevLegajos.disabled = (pageIndex === 0);
-  btnNextLegajos.disabled = (pageIndex >= totalPages - 1);
+  if (btnPrevLegajos) btnPrevLegajos.disabled = pageIndex === 0;
+  if (btnNextLegajos) btnNextLegajos.disabled = pageIndex >= totalPages - 1;
 
   tblLegajosBody.innerHTML = "";
 
@@ -523,22 +549,21 @@ function renderLegajos() {
     tblLegajosBody.appendChild(tr);
   }
 
-  tblLegajosBody.querySelectorAll(".btnToggleActivo").forEach(btn => {
+  tblLegajosBody.querySelectorAll(".btnToggleActivo").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const leg = btn.getAttribute("data-leg");
       if (!leg) return;
 
       try {
-        const current = legajosCache.find(x => x.leg === leg);
+        const current = legajosCache.find((x) => x.leg === leg);
         const nextActivo = !(current?.activo);
 
         await updateDoc(doc(db, "legajos_activos", leg), {
           activo: nextActivo,
-          updatedAt: serverTimestamp()
+          updatedAt: Timestamp.now(), // ✅ timestamp real
         });
 
         if (current) current.activo = nextActivo;
-        await loadLegajosActivos({ force: true });
 
         setMsg(msgLegajos, `OK. Legajo ${leg} ${nextActivo ? "activado" : "desactivado"}.`, "ok");
         renderLegajos();
@@ -558,36 +583,38 @@ function canonLegajoFromInput(v) {
   return canon;
 }
 
-btnAgregarLegajo.addEventListener("click", async () => {
+btnAgregarLegajo?.addEventListener("click", async () => {
   setMsg(msgLegajos, "", "");
 
   try {
-    const canon = canonLegajoFromInput(nuevoLegajo.value);
+    const canon = canonLegajoFromInput(nuevoLegajo?.value);
     if (!canon) return setMsg(msgLegajos, "Legajo inválido (0..9999).", "err");
     if (canon === "0") return setMsg(msgLegajos, "El legajo 0 no se administra (siempre permitido).", "err");
 
-    const nombre = String(nombreLegajo.value || "").trim().slice(0, 60);
+    const nombre = String(nombreLegajo?.value || "").trim().slice(0, 60);
 
-    await setDoc(doc(db, "legajos_activos", canon), {
-      activo: true,
-      nombre,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
+    await setDoc(
+      doc(db, "legajos_activos", canon),
+      {
+        activo: true,
+        nombre,
+        updatedAt: Timestamp.now(), // ✅ timestamp real
+      },
+      { merge: true }
+    );
 
-    await loadLegajosActivos({ force: true });
     setMsg(msgLegajos, `OK. Legajo ${canon} activado.`, "ok");
-
-    nuevoLegajo.value = "";
-    nombreLegajo.value = "";
+    if (nuevoLegajo) nuevoLegajo.value = "";
+    if (nombreLegajo) nombreLegajo.value = "";
   } catch (err) {
     console.error(err);
     setMsg(msgLegajos, `Error:\n${formatErr(err)}`, "err");
   }
 });
 
-btnCargarLegajos.addEventListener("click", async () => {
+btnCargarLegajos?.addEventListener("click", async () => {
   setMsg(msgLegajos, "", "");
-  tblLegajosBody.innerHTML = "";
+  if (tblLegajosBody) tblLegajosBody.innerHTML = "";
   legajosCache = [];
   pageIndex = 0;
 
@@ -600,7 +627,7 @@ btnCargarLegajos.addEventListener("click", async () => {
       legajosCache.push({
         leg: d.id,
         nombre: data.nombre ?? "",
-        activo: !!data.activo
+        activo: !!data.activo,
       });
     });
 
@@ -612,34 +639,43 @@ btnCargarLegajos.addEventListener("click", async () => {
   }
 });
 
-buscarLegajo.addEventListener("input", () => { pageIndex = 0; renderLegajos(); });
-btnPrevLegajos.addEventListener("click", () => { pageIndex--; renderLegajos(); });
-btnNextLegajos.addEventListener("click", () => { pageIndex++; renderLegajos(); });
+buscarLegajo?.addEventListener("input", () => {
+  pageIndex = 0;
+  renderLegajos();
+});
+btnPrevLegajos?.addEventListener("click", () => {
+  pageIndex--;
+  renderLegajos();
+});
+btnNextLegajos?.addEventListener("click", () => {
+  pageIndex++;
+  renderLegajos();
+});
 
 // ===== Importación masiva (10 clics, sin mensajes “faltan X”) =====
 let unlockClicks = 0;
 let importUnlocked = false;
 
-btnUnlockImport.addEventListener("click", () => {
+btnUnlockImport?.addEventListener("click", () => {
   unlockClicks++;
   if (unlockClicks >= 10) {
     importUnlocked = true;
-    importBox.style.display = "block";
+    if (importBox) importBox.style.display = "block";
   }
 });
 
-btnCancelarImport.addEventListener("click", () => {
+btnCancelarImport?.addEventListener("click", () => {
   importUnlocked = false;
   unlockClicks = 0;
-  importBox.style.display = "none";
-  bulkLegajos.value = "";
+  if (importBox) importBox.style.display = "none";
+  if (bulkLegajos) bulkLegajos.value = "";
   setMsg(msgImport, "", "");
 });
 
 function parseLegajosFromBulk(text) {
   const parts = String(text || "")
     .split(/[,\s;\t\r\n]+/g)
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean);
 
   const seen = new Set();
@@ -648,33 +684,42 @@ function parseLegajosFromBulk(text) {
 
   for (const p of parts) {
     const digits = p.replace(/\D/g, "");
-    if (!digits || digits.length > 4) { invalid.push(p); continue; }
+    if (!digits || digits.length > 4) {
+      invalid.push(p);
+      continue;
+    }
     const canon = canonicalizeLegajoDigits(digits);
-    if (!isValidLegajoCanon(canon)) { invalid.push(p); continue; }
-    if (!seen.has(canon)) { seen.add(canon); ok.push(canon); }
+    if (!isValidLegajoCanon(canon)) {
+      invalid.push(p);
+      continue;
+    }
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      ok.push(canon);
+    }
   }
   return { ok, invalid };
 }
 
 function requireAdminOrThrow() {
   const u = auth.currentUser;
-  const isPasswordUser = !!u?.providerData?.some(p => p.providerId === "password");
+  const isPasswordUser = !!u?.providerData?.some((p) => p.providerId === "password");
   if (!u || !isPasswordUser) throw new Error("Solo admin logueado puede importar.");
 }
 
-btnImportarLegajos.addEventListener("click", async () => {
+btnImportarLegajos?.addEventListener("click", async () => {
   setMsg(msgImport, "", "");
 
   try {
     requireAdminOrThrow();
     if (!importUnlocked) return;
 
-    const { ok, invalid } = parseLegajosFromBulk(bulkLegajos.value);
+    const { ok, invalid } = parseLegajosFromBulk(bulkLegajos?.value);
     if (!ok.length) return setMsg(msgImport, "No encontré legajos válidos.", "err");
 
     if (!confirm(`Se activarán ${ok.length} legajos. ¿Continuar?`)) return;
 
-    btnImportarLegajos.disabled = true;
+    if (btnImportarLegajos) btnImportarLegajos.disabled = true;
 
     let imported = 0;
     for (let i = 0; i < ok.length; i += 450) {
@@ -683,36 +728,39 @@ btnImportarLegajos.addEventListener("click", async () => {
 
       for (const leg of slice) {
         if (leg === "0") continue;
-        // NO pisa nombre (solo activa)
-        batch.set(doc(db, "legajos_activos", leg), {
-          activo: true,
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+        batch.set(
+          doc(db, "legajos_activos", leg),
+          {
+            activo: true,
+            updatedAt: Timestamp.now(), // ✅ timestamp real
+          },
+          { merge: true }
+        );
         imported++;
       }
 
       await batch.commit();
     }
 
-    await loadLegajosActivos({ force: true });
-
     setMsg(
       msgImport,
       `OK importados/activados: ${imported}` +
-      (invalid.length ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}` : ""),
+        (invalid.length
+          ? `\nInválidos ignorados: ${invalid.slice(0, 10).join(", ")}${invalid.length > 10 ? "..." : ""}`
+          : ""),
       "ok"
     );
 
     // bloquea de nuevo
     importUnlocked = false;
     unlockClicks = 0;
-    importBox.style.display = "none";
-    bulkLegajos.value = "";
+    if (importBox) importBox.style.display = "none";
+    if (bulkLegajos) bulkLegajos.value = "";
   } catch (err) {
     console.error(err);
     setMsg(msgImport, `Error:\n${formatErr(err)}`, "err");
   } finally {
-    btnImportarLegajos.disabled = false;
+    if (btnImportarLegajos) btnImportarLegajos.disabled = false;
   }
 });
 
@@ -720,7 +768,6 @@ btnImportarLegajos.addEventListener("click", async () => {
 (async function init() {
   try {
     await ensureAnon();
-    await loadLegajosActivos({ force: true });
   } catch {}
   refreshPreview();
 })();
