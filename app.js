@@ -312,14 +312,18 @@ function getMonthRange(yyyyMm) {
   return { start, end };
 }
 
-// ✅ CORREGIDO: misma fecha y hora, pero sin coma
-function formatFechaHoraMin(dateObj) {
+// --- NUEVOS FORMATOS SEPARADOS ---
+function formatSoloFecha(dateObj) {
   const dd = String(dateObj.getDate()).padStart(2, "0");
   const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
   const yyyy = dateObj.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function formatSoloHora(dateObj) {
   const hh = String(dateObj.getHours()).padStart(2, "0");
   const mi = String(dateObj.getMinutes()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  return `${hh}:${mi}`;
 }
 
 function renderMonthPreview() {
@@ -345,7 +349,8 @@ function renderMonthPreview() {
   tblBody.innerHTML = "";
   for (const r of slice) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${escapeHtml(r.FechaHora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
+    // En la tabla web, mostramos Fecha y Hora juntas para ahorrar espacio, pero con el nuevo formato
+    tr.innerHTML = `<td>${escapeHtml(r.Fecha)} ${escapeHtml(r.Hora)}</td><td>${escapeHtml(r.Legajo)}</td>`;
     tblBody.appendChild(tr);
   }
 }
@@ -384,7 +389,8 @@ btnCargarMes?.addEventListener("click", async () => {
       const d = docu.data();
       const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
       monthPreviewCache.push({
-        FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
+        Fecha: createdAt ? formatSoloFecha(createdAt) : "",
+        Hora: createdAt ? formatSoloHora(createdAt) : "",
         Legajo: d.token ?? "",
       });
     });
@@ -414,6 +420,7 @@ async function getMonthCount(start, end) {
   return snap.data().count || 0;
 }
 
+// --- EXPORTACIÓN CON COLUMNAS SEPARADAS ---
 async function exportMonthToExcel(yyyyMm) {
   const { start, end } = getMonthRange(yyyyMm);
   let allRows = [];
@@ -438,7 +445,8 @@ async function exportMonthToExcel(yyyyMm) {
       const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
 
       allRows.push({
-        FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
+        Fecha: createdAt ? formatSoloFecha(createdAt) : "",
+        Hora: createdAt ? formatSoloHora(createdAt) : "",
         Legajo: d.token ?? "",
       });
     });
@@ -452,8 +460,9 @@ async function exportMonthToExcel(yyyyMm) {
 
   if (!allRows.length) return { filename: null, rows: 0 };
 
-  const ws = XLSX.utils.json_to_sheet(allRows, { header: ["FechaHora", "Legajo"] });
-  ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
+  // Definimos las cabeceras: Fecha, Hora, Legajo
+  const ws = XLSX.utils.json_to_sheet(allRows, { header: ["Fecha", "Hora", "Legajo"] });
+  ws["!cols"] = [{ wch: 12 }, { wch: 10 }, { wch: 12 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Registros");
