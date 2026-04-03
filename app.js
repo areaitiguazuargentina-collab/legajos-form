@@ -57,7 +57,7 @@ const btnAdminLogout = $("btnAdminLogout");
 const msgAdmin = $("msgAdmin");
 
 const adminPanelSection = $("adminPanelSection");
-const msgPanel = $("msgPanel"); // <--- CORRECCIÓN: Agregado
+const msgPanel = $("msgPanel");
 const mesInput = $("mes");
 const btnCargarMes = $("btnCargarMes");
 const btnExportarMes = $("btnExportarMes");
@@ -312,11 +312,14 @@ function getMonthRange(yyyyMm) {
   return { start, end };
 }
 
+// ✅ CORREGIDO: misma fecha y hora, pero sin coma
 function formatFechaHoraMin(dateObj) {
-  return dateObj.toLocaleString("es-AR", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  });
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const yyyy = dateObj.getFullYear();
+  const hh = String(dateObj.getHours()).padStart(2, "0");
+  const mi = String(dateObj.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
 }
 
 function renderMonthPreview() {
@@ -348,7 +351,7 @@ function renderMonthPreview() {
 }
 
 btnCargarMes?.addEventListener("click", async () => {
-  setMsg(msgPanel, "", ""); // <--- CORRECCIÓN: Usa msgPanel
+  setMsg(msgPanel, "", "");
   monthPreviewCache = [];
   monthPageIndex = 0;
   if (tblBody) tblBody.innerHTML = "";
@@ -416,6 +419,7 @@ async function exportMonthToExcel(yyyyMm) {
   let allRows = [];
   let lastDoc = null;
   let fetched = 0;
+
   while (true) {
     const base = [
       collection(db, "registros_tokens"),
@@ -424,34 +428,44 @@ async function exportMonthToExcel(yyyyMm) {
       orderBy("createdAt", "asc"),
       limit(EXPORT_PAGE_SIZE),
     ];
+
     const qPage = lastDoc ? query(...base, startAfter(lastDoc)) : query(...base);
     const snap = await getDocs(qPage);
     if (snap.empty) break;
+
     snap.forEach((docu) => {
       const d = docu.data();
       const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : null;
+
       allRows.push({
         FechaHora: createdAt ? formatFechaHoraMin(createdAt) : "",
         Legajo: d.token ?? "",
       });
     });
+
     fetched += snap.size;
     lastDoc = snap.docs[snap.docs.length - 1];
+
     if (mesInfo) mesInfo.textContent = `Exportando... ${fetched} filas leídas`;
     if (snap.size < EXPORT_PAGE_SIZE) break;
   }
+
   if (!allRows.length) return { filename: null, rows: 0 };
+
   const ws = XLSX.utils.json_to_sheet(allRows, { header: ["FechaHora", "Legajo"] });
   ws["!cols"] = [{ wch: 20 }, { wch: 12 }];
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Registros");
+
   const filename = `control_colectivos_${yyyyMm}.xlsx`;
   XLSX.writeFile(wb, filename, { compression: true });
+
   return { filename, rows: allRows.length };
 }
 
 btnExportarMes?.addEventListener("click", async () => {
-  setMsg(msgPanel, "", ""); // <--- CORRECCIÓN: Usa msgPanel
+  setMsg(msgPanel, "", "");
   
   try {
     const yyyyMm = mesInput?.value;
